@@ -1,0 +1,122 @@
+--- mqtt_utk.c.orig	2026-10-23 23:23:16.901488948 +0800
++++ mqtt_utk.c	2026-10-23 23:23:16.928982678 +0800
+@@ -45,6 +45,37 @@
+ 
+ static void heartbeat_timeout(void *arg);
+ 
++/* ---- PicoCar (IS11) application hooks ------------------------------
++ * Telemetry: every APP_MQTT_TELEMETRY_MS the service task asks the
++ * application for packed telemetry and publishes it with QoS 0.
++ * Commands: payloads received on the command topic (QoS 1) are passed
++ * raw to the application.  Both hooks run in this service task: the
++ * application side must never block.  The weak defaults below keep the
++ * template behaviour when no application provides them. */
++#ifndef APP_MQTT_TELEMETRY_TOPIC
++#define APP_MQTT_TELEMETRY_TOPIC	"is11/telemetry"
++#endif
++#ifndef APP_MQTT_COMMAND_TOPIC
++#define APP_MQTT_COMMAND_TOPIC		"is11/cmd"
++#endif
++#define APP_MQTT_TELEMETRY_MS		200
++#define APP_MQTT_MAX_PER_TICK		2
++#define APP_MQTT_PAYLOAD_MAX		64
++
++int __attribute__((weak)) app_mqtt_take_telemetry(unsigned char *buf, int max_len)
++{
++	(void)buf; (void)max_len;
++	return 0;
++}
++void __attribute__((weak)) app_mqtt_on_command(const unsigned char *data, int len)
++{
++	(void)data; (void)len;
++}
++
++static unsigned char	rx_raw[MQTT_UTK_RX_DATA_MAX];
++static u16_t		rx_raw_len;
++static void telemetry_timeout(void *arg);
++
+ /* mqtt.c NUL-terminates the topic before handing it over, but it is only
+  * valid for the duration of this call -- copy it out. */
+ static void incoming_publish_cb(void *arg, const char *topic, u32_t tot_len)
+@@ -60,6 +91,7 @@
+ 	rx_topic[i] = '\0';
+ 
+ 	rx_len = 0;
++	rx_raw_len = 0;
+ 	rx_truncated = 0;
+ }
+ 
+@@ -70,6 +102,9 @@
+ 	(void)arg;
+ 
+ 	for(i = 0; i < len; i++) {
++		if(rx_raw_len < MQTT_UTK_RX_DATA_MAX) {
++			rx_raw[rx_raw_len++] = data[i];	/* raw copy for the app */
++		}
+ 		if(rx_len < (MQTT_UTK_RX_DATA_MAX - 1)) {
+ 			/* The console is a terminal -- keep raw bytes from a
+ 			 * payload this demo did not publish from scrambling it. */
+@@ -81,6 +116,20 @@
+ 	}
+ 
+ 	if((flags & MQTT_DATA_FLAG_LAST) != 0) {
++		u32_t	k;
++		int	is_cmd = 1;
++		const char *ct = APP_MQTT_COMMAND_TOPIC;
++
++		for(k = 0; ct[k] != '\0' || rx_topic[k] != '\0'; k++) {
++			if(ct[k] != rx_topic[k]) {
++				is_cmd = 0;
++				break;
++			}
++		}
++		if(is_cmd) {
++			app_mqtt_on_command(rx_raw, (int)rx_raw_len);
++			return;
++		}
+ 		rx_data[rx_len] = '\0';
+ 		tm_printf((UB*)"mqtt: RX [%s] \"%s\"%s\n", rx_topic, rx_data,
+ 			  rx_truncated? " (truncated)": "");
+@@ -127,6 +176,26 @@
+ 	sys_timeout(MQTT_UTK_HEARTBEAT_MS, heartbeat_timeout, NULL);
+ }
+ 
++static void telemetry_timeout(void *arg)
++{
++	unsigned char	buf[APP_MQTT_PAYLOAD_MAX];
++	int		n;
++	int		k;
++
++	(void)arg;
++	if(mqtt_client_is_connected(client)) {
++		for(k = 0; k < APP_MQTT_MAX_PER_TICK; k++) {
++			n = app_mqtt_take_telemetry(buf, (int)sizeof(buf));
++			if(n <= 0) {
++				break;
++			}
++			(void)mqtt_publish(client, APP_MQTT_TELEMETRY_TOPIC, buf, (u16_t)n,
++					   0 /* qos */, 0 /* retain */, publish_done_cb, NULL);
++		}
++	}
++	sys_timeout(APP_MQTT_TELEMETRY_MS, telemetry_timeout, NULL);
++}
++
+ static void retry_timeout(void *arg)
+ {
+ 	(void)arg;
+@@ -172,6 +241,15 @@
+ 		 * MEMP_SYS_TIMEOUT slot until the pool is exhausted. */
+ 		sys_untimeout(heartbeat_timeout, NULL);
+ 		sys_timeout(MQTT_UTK_HEARTBEAT_MS, heartbeat_timeout, NULL);
++
++		/* PicoCar: command topic (QoS 1) and the telemetry chain. */
++		err = mqtt_subscribe(client, APP_MQTT_COMMAND_TOPIC, 1 /* qos */,
++				     subscribe_done_cb, NULL);
++		if(err != ERR_OK) {
++			tm_printf((UB*)"mqtt: command subscribe failed, err=%d\n", (int)err);
++		}
++		sys_untimeout(telemetry_timeout, NULL);
++		sys_timeout(APP_MQTT_TELEMETRY_MS, telemetry_timeout, NULL);
+ 	} else {
+ 		/* mqtt_client_connect() reconnects on its own for a dropped
+ 		 * keepalive; a rejected/never-established connection does not
