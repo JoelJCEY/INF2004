@@ -1,0 +1,4 @@
+build
+!.vscode/*
+
+wifi_credentials.h
