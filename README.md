@@ -256,3 +256,6 @@ They need the SDK's `lib/lwip` submodule and a `config/wifi_secrets.h`
 *micro T-Kernel 3.0 © Ken Sakamura / TRON Forum, distributed under the
 T-License 2.2. This dual-core RP2040 port is derived from the official
 μT-Kernel 3.0 BSP (`tron-forum/mtk3_bsp`, branch `pico_rp2040`).*
+
+# INF2004
+Embedded Project
