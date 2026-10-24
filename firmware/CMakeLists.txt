@@ -56,6 +56,7 @@ target_include_directories(firmware PRIVATE
 # Add any user requested libraries
 target_link_libraries(firmware 
         pico_cyw43_arch_lwip_poll
+        pico_lwip_mqtt
         )
 
 pico_add_extra_outputs(firmware)
