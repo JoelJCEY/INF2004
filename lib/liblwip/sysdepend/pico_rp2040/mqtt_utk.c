@@ -208,6 +208,8 @@ void mqtt_utk_start(void)
 	IP_SET_TYPE(&broker_addr, IPADDR_TYPE_V4);
 
 	client_info.client_id = MQTT_CLIENT_ID;
+	client_info.client_user = MQTT_USERNAME;
+	client_info.client_pass = MQTT_PASSWORD;
 	client_info.keep_alive = MQTT_UTK_KEEPALIVE_S;
 
 	connecting = 1;
