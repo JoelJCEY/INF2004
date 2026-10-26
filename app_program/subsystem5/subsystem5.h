@@ -53,7 +53,8 @@ IMPORT ID	flg_ctrl;
 #define FLG_TERRAIN		(1U << 1)	/* message on mbf_terrain    */
 #define FLG_OBSTACLE		(1U << 2)	/* message on mbf_obstacle   */
 #define FLG_MOTION		(1U << 3)	/* message on mbf_motion_st  */
-#define FLG_EVENTS_ALL		(FLG_NAV | FLG_TERRAIN | FLG_OBSTACLE | FLG_MOTION)
+#define FLG_REMOTE		(1U << 4)	/* remote MQTT command       */
+#define FLG_EVENTS_ALL		(FLG_NAV | FLG_TERRAIN | FLG_OBSTACLE | FLG_MOTION | FLG_REMOTE)
 
 /* State bit, set and cleared by imu_task only (never by ctrl_task).
  * scan_task ignores readings while it is set (it may see the hump).   */

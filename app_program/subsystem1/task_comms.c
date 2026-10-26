@@ -10,6 +10,7 @@
  */
 
 #include "subsystem1.h"
+#include "telemetry_codec.h"
 
 #if TM_WIFI_CYW43
 #include "cyw43_utk.h"
@@ -37,6 +38,7 @@ LOCAL BOOL s1_read_link(void)
 EXPORT void comms_task(INT stacd, void *exinf)
 {
 	S1_TELEMETRY	t;
+	UB		frame[S1_MQTT_FRAME_SIZE];
 	UW		last_link_ms = 0U;
 	BOOL		header_done = FALSE;
 	SYSTIM		now;
@@ -61,6 +63,17 @@ EXPORT void comms_task(INT stacd, void *exinf)
 			continue;	/* timeout: nothing to print */
 		}
 		s1_rx_count++;
+		/* An internal copy of a complete snapshot; only the network task
+		 * may call mqtt_publish(). Never wait on a full message buffer. */
+		if (s1_encode_telemetry(&t, frame, sizeof(frame)) == sizeof(frame)) {
+			if (tk_snd_mbf(mbf_mqtt_tx, frame, sizeof(frame), TMO_POL) < E_OK) {
+				/* Keep the newest reading when Wi-Fi is disconnected or
+				 * temporarily too busy to drain the small inbox. */
+				UB old[S1_MQTT_FRAME_SIZE];
+				(void)tk_rcv_mbf(mbf_mqtt_tx, old, TMO_POL);
+				(void)tk_snd_mbf(mbf_mqtt_tx, frame, sizeof(frame), TMO_POL);
+			}
+		}
 		if (S1_PRINT_CSV == 0) {
 			continue;
 		}

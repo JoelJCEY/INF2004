@@ -14,5 +14,7 @@
  * than once -- a second call while already connecting/connected is a no-op.
  */
 void mqtt_utk_start(void);
+/* Called only by cyw43_utk_task(), after network polling. */
+void mqtt_utk_publish_telemetry(void);
 
 #endif /* MQTT_UTK_H */

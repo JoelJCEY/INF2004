@@ -23,6 +23,7 @@
 
 #include "subsystem5.h"
 #include "../subsystem1/subsystem1.h"
+#include "../subsystem1/command_codec.h"
 #include "../subsystem2/subsystem2.h"
 #include "../subsystem3/subsystem3.h"
 #include "../subsystem4/subsystem4.h"
@@ -81,6 +82,45 @@ LOCAL void ctrl_fault(UW bit)
 {
 	s5_fault_mask |= bit;
 	ctrl_stop(VS_FAULT_STOP);
+}
+
+LOCAL void ctrl_reset(void)
+{
+	(void)motion_stop();
+	(void)motion_reset_fault();
+	(void)motion_set_speed_limit(0);
+	s5_fault_mask = 0U;
+	ctrl_enter(VS_INITIALISING);
+}
+
+LOCAL void ctrl_remote_commands(void)
+{
+	UB command;
+	BOOL stop_pending = FALSE;
+
+	while (tk_rcv_mbf(mbf_remote_stop, &command, TMO_POL) > 0) {
+		stop_pending = TRUE;
+	}
+	if (stop_pending == TRUE) {
+		/* STOP wins over START/RESET received in the same controller cycle. */
+		if (st == VS_FAULT_STOP) {
+			(void)motion_stop();
+		} else {
+			ctrl_stop(VS_STOPPED);
+		}
+		while (tk_rcv_mbf(mbf_remote_other, &command, TMO_POL) > 0) {
+			;
+		}
+		return;
+	}
+	while (tk_rcv_mbf(mbf_remote_other, &command, TMO_POL) > 0) {
+		if (command == (UB)S1_CMD_RESET) {
+			ctrl_reset();
+		} else if ((command == (UB)S1_CMD_START) &&
+			   ((st == VS_READY) || (st == VS_STOPPED))) {
+			ctrl_follow();
+		}
+	}
 }
 
 /* ------------------------------------------------------------------ */
@@ -211,12 +251,8 @@ LOCAL void ctrl_buttons(void)
 			both_since = now;
 		} else if ((now - both_since) >= (UW)S5_RESET_HOLD_MS) {
 			tm_printf((UB *)"[CTRL] RESET\n");
-			(void)motion_stop();
-			(void)motion_reset_fault();
-			(void)motion_set_speed_limit(0);
-			s5_fault_mask = 0U;
 			both_since = 0U;
-			ctrl_enter(VS_INITIALISING);
+			ctrl_reset();
 		} else {
 			;
 		}
@@ -342,6 +378,7 @@ EXPORT void ctrl_task(INT stacd, void *exinf)
 		}
 
 		ctrl_buttons();
+		ctrl_remote_commands(); /* STOP overrides a simultaneous button START. */
 		ctrl_timers();
 
 		if ((s5_now_ms() - last_tel) >= (UW)(S5_CTRL_TICK_MS * S5_TELEMETRY_EVERY)) {

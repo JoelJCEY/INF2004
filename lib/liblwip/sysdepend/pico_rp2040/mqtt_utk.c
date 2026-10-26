@@ -21,8 +21,18 @@
 #include "wifi_secrets.h"
 #include "mqtt_utk.h"
 #include <tm/tmonitor.h>
+#include <string.h>
 
-#define MQTT_UTK_HEARTBEAT_MS   5000
+/* This task is the only caller of lwIP/MQTT. The application gives it an
+ * already packed snapshot through a nonblocking kernel message buffer. */
+extern int s1_mqtt_take_frame(unsigned char *out, int capacity);
+extern int s1_mqtt_submit_command(const unsigned char *data, int length);
+
+#define MQTT_UTK_TELEMETRY_TOPIC "mtk3smp-pico/telemetry"
+#define MQTT_UTK_COMMAND_TOPIC   "mtk3smp-pico/command"
+#define MQTT_UTK_TELEMETRY_SIZE  36
+
+#define MQTT_UTK_HEARTBEAT_MS   1000
 #define MQTT_UTK_KEEPALIVE_S    60
 #define MQTT_UTK_RETRY_MS       3000
 
@@ -42,8 +52,32 @@ static char		rx_topic[MQTT_UTK_RX_TOPIC_MAX];
 static UB		rx_data[MQTT_UTK_RX_DATA_MAX];
 static u16_t		rx_len;
 static u8_t		rx_truncated;
+static u8_t		rx_is_command;
+static u32_t		rx_total_len;
+static u8_t		rx_command_byte;
 
 static void heartbeat_timeout(void *arg);
+
+void mqtt_utk_publish_telemetry(void)
+{
+	u8_t frame[MQTT_UTK_TELEMETRY_SIZE];
+	int length;
+	err_t result;
+
+	if(client == NULL || !mqtt_client_is_connected(client)) {
+		return;
+	}
+	length = s1_mqtt_take_frame(frame, sizeof(frame));
+	if(length != MQTT_UTK_TELEMETRY_SIZE) {
+		return;
+	}
+	result = mqtt_publish(client, MQTT_UTK_TELEMETRY_TOPIC,
+			      frame, (u16_t)length, 0, 0, NULL, NULL);
+	if(result != ERR_OK) {
+		tm_printf((UB*)"mqtt: telemetry publish failed, err=%d\n",
+			  (int)result);
+	}
+}
 
 /* mqtt.c NUL-terminates the topic before handing it over, but it is only
  * valid for the duration of this call -- copy it out. */
@@ -52,7 +86,6 @@ static void incoming_publish_cb(void *arg, const char *topic, u32_t tot_len)
 	u32_t	i;
 
 	(void)arg;
-	(void)tot_len;
 
 	for(i = 0; i < (MQTT_UTK_RX_TOPIC_MAX - 1) && topic[i] != '\0'; i++) {
 		rx_topic[i] = topic[i];
@@ -61,6 +94,8 @@ static void incoming_publish_cb(void *arg, const char *topic, u32_t tot_len)
 
 	rx_len = 0;
 	rx_truncated = 0;
+	rx_is_command = (strcmp(rx_topic, MQTT_UTK_COMMAND_TOPIC) == 0);
+	rx_total_len = tot_len;
 }
 
 static void incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
@@ -68,6 +103,30 @@ static void incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
 	u16_t	i;
 
 	(void)arg;
+	if(rx_is_command) {
+		/* The command wire format is exactly one byte, code 1/2/3 in
+		 * its lowest two bits, with every other bit zero. */
+		if(rx_total_len == 1 && len == 1 && rx_len == 0) {
+			rx_command_byte = data[0];
+		}
+		rx_len = (u16_t)(rx_len + len);
+		if((flags & MQTT_DATA_FLAG_LAST) != 0) {
+			if(rx_total_len != 1 || rx_len != 1 ||
+			   !s1_mqtt_submit_command(&rx_command_byte, 1)) {
+				tm_printf((UB*)"mqtt: rejected command\n");
+			} else {
+				tm_printf((UB*)"mqtt: accepted command 0x%02x\n",
+				          (unsigned int)rx_command_byte);
+			}
+		}
+		return;
+	}
+	if(strcmp(rx_topic, MQTT_TOPIC) == 0 && rx_total_len == 2 &&
+	   rx_len == 0 && len == 2 && (flags & MQTT_DATA_FLAG_LAST) != 0 &&
+	   data[0] == 1) {
+		tm_printf((UB*)"mqtt: heartbeat RX seq=%u\n", (unsigned int)data[1]);
+		return;
+	}
 
 	for(i = 0; i < len; i++) {
 		if(rx_len < (MQTT_UTK_RX_DATA_MAX - 1)) {
@@ -89,9 +148,8 @@ static void incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
 
 static void subscribe_done_cb(void *arg, err_t result)
 {
-	(void)arg;
 	if(result == ERR_OK) {
-		tm_printf((UB*)"mqtt: subscribed to " MQTT_TOPIC "\n");
+		tm_printf((UB*)"mqtt: subscribed to %s\n", (const char*)arg);
 	} else {
 		tm_printf((UB*)"mqtt: subscribe failed, err=%d\n", (int)result);
 	}
@@ -108,15 +166,15 @@ static void publish_done_cb(void *arg, err_t result)
 static void heartbeat_timeout(void *arg)
 {
 	static unsigned int	count = 0;
-	UB			payload[48];
-	int			len;
+	UB			payload[2];
 
 	(void)arg;
 
 	if(mqtt_client_is_connected(client)) {
-		len = tm_sprintf(payload, (const UB*)"hb %u", count++);
-		tm_printf((UB*)"mqtt: TX [" MQTT_TOPIC "] \"%s\"\n", payload);
-		(void)mqtt_publish(client, MQTT_TOPIC, payload, (u16_t)len,
+		payload[0] = 1; /* heartbeat wire format version */
+		payload[1] = (UB)(count++); /* wraps after 255 */
+		tm_printf((UB*)"mqtt: heartbeat TX seq=%u\n", (unsigned int)payload[1]);
+		(void)mqtt_publish(client, MQTT_TOPIC, payload, sizeof(payload),
 				   0 /* qos */, 0 /* retain */,
 				   publish_done_cb, NULL);
 	}
@@ -160,9 +218,15 @@ static void connection_cb(mqtt_client_t *c, void *arg, mqtt_connection_status_t 
 					incoming_data_cb, NULL);
 
 		err = mqtt_subscribe(client, MQTT_TOPIC, 0 /* qos */,
-				     subscribe_done_cb, NULL);
+				     subscribe_done_cb, (void*)MQTT_TOPIC);
 		if(err != ERR_OK) {
 			tm_printf((UB*)"mqtt: mqtt_subscribe() failed, err=%d\n",
+				  (int)err);
+		}
+		err = mqtt_subscribe(client, MQTT_UTK_COMMAND_TOPIC, 1 /* qos */,
+				     subscribe_done_cb, (void*)MQTT_UTK_COMMAND_TOPIC);
+		if(err != ERR_OK) {
+			tm_printf((UB*)"mqtt: command subscribe failed, err=%d\n",
 				  (int)err);
 		}
 
