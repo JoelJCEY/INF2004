@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IS11 Car Dashboard</title>
+<!-- Open this file in a browser on the laptop that runs the MQTT broker.
+     Needs Mosquitto with a WebSocket listener on port 9001 (see tools/mosquitto.conf).
+     Topics: is11/car/tlm (36-byte frames, wire format v1, subsystem1.h),
+             is11/car/log (text lines "uptime_ms message", same as the serial monitor),
+             is11/car/status (online/offline), is11/car/cmd (3-byte commands). -->
+<script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
+<style>
+:root{--bg:#f4f5f8;--card:#fff;--ink:#1c2330;--mute:#677080;--line:#e1e4ea;--ok:#1f9d55;--warn:#c27c00;--bad:#d64545;--info:#2f6fed;--acc:#2f6fed;
+  --okbg:#e7f6ee;--warnbg:#fdf3e1;--badbg:#fdeaea;--infobg:#e9f0fe}
+@media (prefers-color-scheme:dark){:root{--bg:#11141a;--card:#1a1f28;--ink:#e6e9ef;--mute:#8d95a3;--line:#2a313d;--acc:#5b8dff;--info:#5b8dff;
+  --okbg:#15301f;--warnbg:#33280f;--badbg:#3a1a1a;--infobg:#18233d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:2}
+header h1{font-size:16px;margin:0 10px 0 0}
+input{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;min-width:190px}
+button{font:inherit;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:6px 12px;cursor:pointer}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button.stop{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:600}
+button.go{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:600}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:var(--bad);margin-right:5px;vertical-align:-1px}
+.dot.on{background:var(--ok)} .dot.mid{background:var(--warn)}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;padding:14px 16px 24px;max-width:1500px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);margin:0 0 8px}
+.wide{grid-column:1/-1}
+.big{font-size:24px;font-weight:650}
+.row{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px dashed var(--line)}
+.row:last-child{border-bottom:0}
+.row span:first-child{color:var(--mute)}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--mute)} .small{font-size:12px}
+/* Diagnosis */
+#headline{display:flex;gap:12px;align-items:center;padding:12px 14px;border-radius:8px;margin-bottom:10px;background:var(--okbg)}
+#headline .icon{font-size:22px;font-weight:700;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;background:var(--ok);flex:none}
+#headline.bad{background:var(--badbg)} #headline.bad .icon{background:var(--bad)}
+#headline.warn{background:var(--warnbg)} #headline.warn .icon{background:var(--warn)}
+#headline.info{background:var(--infobg)} #headline.info .icon{background:var(--info)}
+#headline b{font-size:17px;display:block}
+#issues{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:10px}
+.issue{border:1px solid var(--line);border-left:5px solid var(--info);border-radius:8px;padding:10px 12px;background:var(--card)}
+.issue.bad{border-left-color:var(--bad)} .issue.warn{border-left-color:var(--warn)} .issue.ok{border-left-color:var(--ok)}
+.issue h3{margin:0 0 4px;font-size:15px;display:flex;justify-content:space-between;gap:8px}
+.issue h3 small{font-weight:400;color:var(--mute);font-size:12px;white-space:nowrap}
+.issue p{margin:4px 0}
+.issue .detail{font:12px ui-monospace,Consolas,monospace;background:var(--bg);border-radius:6px;padding:6px 8px;margin:6px 0;white-space:pre-wrap;word-break:break-word}
+.issue ul{margin:4px 0 0;padding-left:18px} .issue li{margin:2px 0}
+.issue .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);margin-top:6px}
+/* checks */
+.check{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px dashed var(--line)}
+.check:last-child{border-bottom:0}
+.check .st{flex:none;width:58px;text-align:center;font-size:11px;font-weight:700;border-radius:4px;padding:1px 0;color:#fff;background:var(--mute)}
+.st.ok{background:var(--ok)} .st.bad{background:var(--bad)} .st.warn{background:var(--warn)}
+/* bars */
+.bar{position:relative;height:14px;background:var(--bg);border:1px solid var(--line);border-radius:7px;margin:6px 0}
+.bar i{position:absolute;top:1px;bottom:1px;width:4px;border-radius:2px;background:var(--acc);left:50%}
+.bar b{position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--mute)}
+.ir{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px}
+.irc{text-align:center}
+.tube{height:90px;border:1px solid var(--line);border-radius:6px;background:var(--bg);position:relative;overflow:hidden}
+.tube div{position:absolute;left:0;right:0;bottom:0;background:var(--acc)}
+.tube span{position:absolute;left:0;right:0;border-top:1px dashed var(--warn)}
+/* logs */
+.logbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:6px}
+.usgrid{display:grid;grid-template-columns:minmax(220px,1fr) minmax(260px,1.4fr);gap:16px;align-items:start}
+@media (max-width:700px){.usgrid{grid-template-columns:1fr}}
+.usbar{position:relative;height:14px;background:var(--bg);border:1px solid var(--line);border-radius:7px;margin:6px 0;overflow:hidden}
+.usbar div{position:absolute;left:0;top:0;bottom:0;background:var(--ok);width:0}
+.usbar span{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--bad)}
+#radar{width:100%;height:auto;display:block}
+#radarGrid circle{fill:none;stroke:var(--line)} #radarGrid line{stroke:var(--line)}
+#radarGrid text,.radarTxt{fill:var(--mute);font-size:16px}
+#radarRay{stroke:var(--acc);stroke-width:3;stroke-linecap:round}
+.radarCar{fill:var(--acc);opacity:.25}
+.logbar input{min-width:0;margin:0}
+.logbar label{font-size:12px;color:var(--mute);display:flex;gap:4px;align-items:center}
+#carlog,#dashlog{height:260px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;background:var(--bg);border-radius:6px;padding:6px 8px}
+#dashlog{height:120px;color:var(--mute)}
+.ll{display:block} .ll.bad{color:var(--bad);font-weight:600} .ll.warn{color:var(--warn)} .ll.ok{color:var(--ok)} .ll.dim{color:var(--mute)}
+.ll.bench{color:var(--info);font-weight:600}
+.ll em{font-style:normal;color:var(--info)}
+@media (max-width:600px){input{min-width:0;flex:1} #issues{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>IS11 Car</h1>
+  <input id="url" value="ws://localhost:9001" aria-label="Broker WebSocket URL">
+  <button class="primary" id="connect">Connect</button>
+  <span><span class="dot" id="brokerDot"></span>broker</span>
+  <span><span class="dot" id="carDot"></span>car <span id="carStatus" class="muted small"></span></span>
+  <span style="flex:1"></span>
+  <button class="go" data-cmd="start">START</button>
+  <button class="stop" data-cmd="stop" title="Space bar also sends STOP">STOP</button>
+  <button data-cmd="reset">RESET</button>
+</header>
+<main>
+  <section class="card wide">
+    <h2>What's going on</h2>
+    <div id="headline"><div class="icon" id="hlIcon">i</div><div><b id="hlTitle">Connecting…</b><span id="hlText" class="muted"></span></div></div>
+    <div id="issues"></div>
+  </section>
+
+  <section class="card">
+    <h2>State</h2>
+    <div class="big" id="state">-</div>
+    <div class="muted small" id="stateHelp" style="margin:2px 0 8px"></div>
+    <div class="row"><span>Fault bits</span><span class="num" id="faultHex">-</span></div>
+    <div class="row"><span>Motion event</span><span id="mevent">-</span></div>
+    <div class="row"><span>Car uptime</span><span class="num" id="uptime">-</span></div>
+    <div class="row"><span>Last data</span><span class="num" id="age">-</span></div>
+    <div class="row"><span>Frames / gap</span><span class="num" id="rate">-</span></div>
+    <div class="row"><span>Restarted by watchdog</span><span id="wdt">-</span></div>
+  </section>
+
+  <section class="card">
+    <h2>Start-up checks (since last boot)</h2>
+    <div id="checks"></div>
+    <div class="muted small" style="margin-top:6px">Filled from the car's log. Boot lines are kept on the car and sent when Wi-Fi connects.</div>
+  </section>
+
+  <section class="card">
+    <h2>Wheels</h2>
+    <div class="row"><span>Speed L / R</span><span class="num" id="speed">-</span></div>
+    <div class="row"><span>Encoder L / R</span><span class="num" id="enc">-</span></div>
+    <div class="row"><span>Distance</span><span class="num" id="path">-</span></div>
+    <div class="row"><span>Last stall / encoder report</span><span class="num small" id="lastMotion">-</span></div>
+    <h2 style="margin-top:12px">Counts per wheel turn</h2>
+    <div class="small muted">Car stopped. Click Mark, turn each wheel exactly one turn forward by hand, read the difference.</div>
+    <div class="row"><span><button id="mark">Mark</button></span><span class="num" id="cpr">L - / R -</span></div>
+  </section>
+
+  <section class="card">
+    <h2>Line sensors</h2>
+    <div class="ir">
+      <div class="irc"><div class="tube"><div id="irL"></div><span id="thL"></span></div><div class="small">LEFT (barcode)</div><div class="num small" id="irLv">-</div></div>
+      <div class="irc"><div class="tube"><div id="irC"></div><span id="thC"></span></div><div class="small">CENTRE</div><div class="num small" id="irCv">-</div></div>
+      <div class="irc"><div class="tube"><div id="irR"></div><span id="thR"></span></div><div class="small">RIGHT</div><div class="num small" id="irRv">-</div></div>
+    </div>
+    <div class="small muted" style="margin:4px 0 8px">Coloured bar = how much BLACK the sensor sees (empty = white floor, full = black line). Above the dashed line = counts as black. Raw reading in brackets. Live, 10 times a second.</div>
+    <div class="row"><span>Steering error</span><span class="num" id="lerr">-</span></div>
+    <div class="bar"><b></b><i id="lbar"></i></div>
+    <div style="display:flex;justify-content:space-between;font-size:11px" class="muted"><span>line is to the right</span><span>line is to the left</span></div>
+    <div class="row"><span>Line status</span><span id="lflags">-</span></div>
+    <div class="row"><span>Last barcode</span><span id="barcode">-</span></div>
+  </section>
+
+  <section class="card">
+    <h2>Terrain and obstacle</h2>
+    <div class="row"><span>Hump active</span><span id="hump">-</span></div>
+    <div class="row"><span>Highest hump peak</span><span class="num" id="peak">-</span></div>
+    <div class="row"><span>Bumps ignored (single spikes)</span><span class="num" id="spikes">0</span></div>
+    <div class="row"><span>Servo</span><span class="num" id="servo">-</span></div>
+    <div class="row"><span>Obstacle width / closest</span><span class="num" id="obs">-</span></div>
+    <div class="row"><span>Bypass side / fails</span><span id="bypass">-</span></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Ultrasonic sensor (obstacles)</h2>
+    <div class="usgrid">
+      <div>
+        <div class="muted small">Distance where the sensor points</div>
+        <div class="big num" id="usDist">-</div>
+        <div class="usbar"><div id="usFill"></div><span id="usStop" title="stop distance"></span></div>
+        <div style="display:flex;justify-content:space-between" class="small muted"><span>0</span><span id="usStopLbl">stop 10 cm</span><span>60 cm+</span></div>
+        <div class="row"><span>What it is doing</span><span id="usState">-</span></div>
+        <div class="row"><span>Servo angle</span><span class="num" id="usServo">-</span></div>
+        <div class="row"><span>Echoes (last 20)</span><span class="num" id="usEcho">-</span></div>
+        <div class="row"><span>Last obstacle seen</span><span class="num" id="usAlert">-</span></div>
+        <h2 style="margin-top:12px">Last scan</h2>
+        <div class="row"><span>Width / closest</span><span class="num" id="usWidth">-</span></div>
+        <div class="row"><span>Go around on</span><span id="usSide">-</span></div>
+        <div class="row"><span>Sideways move</span><span class="num" id="usOffset">-</span></div>
+        <div class="row"><span>Scan time</span><span class="num" id="usTime">-</span></div>
+        <div class="row"><span>Bypass result</span><span id="usResult">-</span></div>
+      </div>
+      <div>
+        <svg id="radar" viewBox="-320 -330 640 350" role="img" aria-label="Top view of the last scan">
+          <g id="radarGrid"></g><g id="radarPts"></g>
+          <line id="radarRay" x1="0" y1="0" x2="0" y2="-300"></line>
+          <rect x="-40" y="-6" width="80" height="22" rx="5" class="radarCar"></rect>
+          <text x="0" y="10" text-anchor="middle" class="radarTxt">car</text>
+        </svg>
+        <div class="small muted">Top view, car facing up. Dots = last scan (red = the obstacle, within its closest + 15 cm), line = where the sensor points now. Rings every 20 cm.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card wide">
+    <h2>Car log (same as the serial monitor)</h2>
+    <div class="logbar">
+      <label><input type="checkbox" id="fNoise"> show sensor lines (ir:, enc:)</label>
+      <label><input type="checkbox" id="fPause"> pause</label>
+      <button id="copyLog">Copy log</button>
+      <button id="clearLog">Clear</button>
+      <span class="small muted" id="logCount"></span>
+    </div>
+    <div id="carlog"></div>
+  </section>
+
+  <section class="card wide">
+    <h2>Dashboard events</h2>
+    <div id="dashlog"></div>
+  </section>
+</main>
+<script>
+/* ---------- constants (app.h, subsystem1.h, subsystem3.h, subsystem4.h) ---------- */
+const STATES=["INITIALISING","READY","LINE FOLLOWING","BARCODE MANOEUVRE","HUMP CROSSING","OBSTACLE BYPASS","MISSION COMPLETE","STOPPED","FAULT STOP","LINE RECOVERY"];
+const STATE_HELP=[
+ "Running start-up checks: wheel self-test, then a left-right sweep to learn black and white. Keep the car on the line and don't touch it.",
+ "Checks finished. Press START.",
+ "Driving along the line.",
+ "Doing the turn a barcode asked for.",
+ "Crossing a hump at reduced speed.",
+ "Driving around an obstacle.",
+ "Course finished. Press RESET to run again.",
+ "Stopped (STOP pressed, a bump, or the line was lost). Press START to carry on, or RESET to clear the fault bits.",
+ "Motors are locked because of a fault. Fix the cause, then press RESET: the car reruns its start-up checks.",
+ "Searching for the line."];
+const BARCODES=["none","TURN LEFT","TURN RIGHT","GO STRAIGHT","U-TURN","unrecognised","END","?"];
+const EVENTS=["stationary","cruising","accelerating / braking","turning","climbing","descending","impact","?"];
+const T_TLM="is11/car/tlm",T_CMD="is11/car/cmd",T_STATUS="is11/car/status",T_LOG="is11/car/log",T_IR="is11/car/ir",T_US="is11/car/us",T_SWEEP="is11/car/sweep";
+const US_STOP_CM=10,US_STATES=["parked (slow ping)","watching ahead","paused on a hump","scanning (coarse)","scanning (fine)","guarding the bypass"];
+let usHist=[],usLastAlert=null;
+let irLive=0;
+const NOISE=/^(ir|enc):/;
+
+/* One entry per fault bit: what it means, likely causes, what to do */
+const FAULTS=[
+ {bit:0x01,sev:"bad",title:"Wheel stall",
+  what:"A wheel was being driven hard but turned at less than 20% of the target speed for 0.3 s. The motors were locked to protect them.",
+  why:["Wheel blocked, rubbing on the chassis, or the car is pushing against something","Battery low, so the motors are too weak (check the battery level)","Encoder wire loose on that wheel, so turning isn't being counted","Speed set so low the motor can't overcome friction"],
+  fix:["Read which wheel in the detail line above","Lift the car and spin that wheel by hand: it should turn freely","Check the battery is charged and switched on","Press RESET (car reruns its checks)"]},
+ {bit:0x02,sev:"bad",title:"Wheel encoder problem",
+  what:"A wheel encoder didn't count properly. Either the start-up self-test failed, or one encoder went silent while its motor was running.",
+  why:["Self-test count NEGATIVE: the wheel turned backward, so a motor or encoder direction setting is wrong","Self-test count near 0: the wheel didn't move (motor wire, battery off) or the encoder isn't plugged in","Encoder cable loose (GP2-GP5)"],
+  fix:["Check the self-test line in Start-up checks","Watch the wheels at power-on: left wheel spins first, then right, both should roll forward","Battery switch on during the self-test","Press RESET to rerun the self-test"]},
+ {bit:0x04,sev:"bad",title:"Tilt sensor (IMU) not working",
+  what:"The LSM303 accelerometer isn't answering on I2C, so hump and bump detection can't run.",
+  why:["IMU cable loose or on the wrong Grove port (SDA GP16, SCL GP17)","IMU not powered","IMU not ready within the start-up time limit"],
+  fix:["Check the IMU cable at both ends","Power-cycle the car","Press RESET"]},
+ {bit:0x08,sev:"bad",title:"Obstacle bypass failed",
+  what:"The car tried to drive around an obstacle twice and couldn't find the line again.",
+  why:["Obstacle wider than expected","Line not found after the bypass (sensor calibration)"],
+  fix:["Move the car back onto the line","Press RESET"]},
+ {bit:0x10,sev:"warn",title:"Bump / impact detected",
+  what:"The accelerometer saw a jolt of more than 2.5 g on 2 of 3 readings, so the car stopped.",
+  why:["The car hit something","The car was picked up, dropped or knocked","Very strong vibration from a loose part"],
+  fix:["If you picked it up, this is expected","Put it back on the line and press START (or RESET to clear the bit)"]},
+ {bit:0x20,sev:"warn",title:"Line lost",
+  what:"All three line sensors read white for 10 s of driving, so the car stopped.",
+  why:["The car drove off the line (curve too sharp, or steering too weak or too strong)","Sensor calibration wrong, so the line looks too faint (check Start-up checks)","Sensors too high above the floor, or the line is grey/shiny"],
+  fix:["Look at the Line sensors card: on the line, CENTRE should be near 1000","Put the car on the line and press START","If calibration said LOW CONTRAST: put the centre sensor on the line and press RESET"]},
+ {bit:0x40,sev:"info",title:"Ultrasonic sensor not answering",
+  what:"No echo came back 3 times in a row. Reported only; the car keeps going.",
+  why:["Ultrasonic sensor unplugged, or TRIG/ECHO swapped (Grove port 1: yellow = TRIG GP0, white = ECHO GP1)","5 V-only HC-SR04 on 3.3 V","Nothing in range (normal in an open room)"],
+  fix:["Check the Grove cable on port 1","Look at the Ultrasonic card: hold a book 20 cm in front"]},
+ {bit:0x80,sev:"info",title:"Wi-Fi dropped earlier",
+  what:"The car lost Wi-Fi at some point. Reported only; the car keeps going and reconnects.",
+  why:["Phone hotspot turned off or went to sleep","Phone battery saver / hotspot power saving","Car too far from the phone"],
+  fix:["Turn battery saver off on the phone","Keep the phone near the track","RESET clears the bit"]}];
+
+const $=id=>document.getElementById(id);
+let client=null,last=null,lastT=0,frames=0,mark=null,cmdSeq=0,carStatus="?";
+let carLog=[],spikes=0,lastStall=null,lastSelftest={},calib=null,baseline=null,bootSeen=null,lastIr=null;
+let liveIssues={},checks={};
+
+/* ---------- small helpers ---------- */
+function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+function now(){return new Date().toLocaleTimeString();}
+function dlog(t){const el=$("dashlog");el.textContent=now()+"  "+t+"\n"+el.textContent.slice(0,8000);}
+function f(w,s,n){return (w>>>s)&((1<<n)-1);}
+function stName(n){return STATES[+n]||("state "+n);}
+function fmtUp(ms){const s=ms/1000;return s<120?s.toFixed(1)+" s":Math.floor(s/60)+" min "+Math.floor(s%60)+" s";}
+
+/* ---------- telemetry ---------- */
+function decode(buf){
+  const v=new DataView(buf.buffer,buf.byteOffset,buf.byteLength);
+  if(buf.byteLength!==36) throw "length "+buf.byteLength;
+  if(v.getUint8(0)!==1) throw "version "+v.getUint8(0);
+  const st=v.getUint32(2,true);
+  return {seq:v.getUint8(1),status:st,state:f(st,0,4),bc:f(st,4,3),remote:f(st,7,2),lflags:f(st,9,4),
+    servo:30+5*f(st,13,5),hump:f(st,18,1),obst:f(st,19,1),wdt:f(st,20,1),side:f(st,21,2),fails:f(st,23,2),
+    mev:f(st,25,3),link:f(st,28,1),faults:v.getUint8(6),letter:v.getUint8(7),
+    vl:v.getInt16(8,true),vr:v.getInt16(10,true),el:v.getInt32(12,true),er:v.getInt32(16,true),
+    path:v.getUint32(20,true),lerr:v.getInt16(24,true),peak:v.getUint16(26,true),
+    width:v.getUint16(28,true),closest:v.getUint16(30,true),up:v.getUint32(32,true)};
+}
+
+let oneSided=0;
+function show(d){
+  const t=performance.now(),gap=lastT?Math.round(t-lastT):0;lastT=t;frames++;
+  if(last&&d.up+2000<last.up){dlog("car restarted (uptime went back to "+fmtUp(d.up)+")");
+    setIssue("restart",{sev:d.wdt?"bad":"warn",title:d.wdt?"Car restarted by the watchdog":"Car restarted",
+      what:d.wdt?"A task stopped responding, so the watchdog rebooted the Pico.":"The car rebooted (power dip, reset button, or new firmware).",
+      why:d.wdt?["Firmware hang (send me the car log)"]:["Battery voltage dipped when the motors started (low battery)","Loose battery or power wire","You pressed reset or flashed new firmware"],
+      fix:["Check the battery","If it keeps happening, copy the car log and send it"],time:now()});}
+  if(last&&last.state!==d.state) dlog("state "+stName(last.state)+" -> "+stName(d.state));
+  if(last&&last.faults!==d.faults) dlog("fault bits 0x"+d.faults.toString(16).padStart(2,"0"));
+  last=d;
+
+  $("state").textContent=stName(d.state);
+  $("state").style.color=d.state===8?"var(--bad)":d.state===7?"var(--warn)":(d.state>=2&&d.state<=5)?"var(--ok)":"";
+  $("stateHelp").textContent=STATE_HELP[d.state]||"";
+  $("faultHex").textContent="0x"+d.faults.toString(16).padStart(2,"0")+(d.faults?"  ("+FAULTS.filter(x=>d.faults&x.bit).map(x=>x.title).join(", ")+")":"  (none)");
+  $("mevent").textContent=EVENTS[d.mev];
+  $("uptime").textContent=fmtUp(d.up);
+  $("rate").textContent=frames+" / "+gap+" ms";
+  $("wdt").textContent=d.wdt?"YES":"no";
+  $("speed").textContent=d.vl+" / "+d.vr+" mm/s";
+  $("enc").textContent=d.el+" / "+d.er;
+  $("path").textContent=d.path+" mm";
+  if(mark) $("cpr").textContent="L "+(d.el-mark.l)+" / R "+(d.er-mark.r);
+  $("lerr").textContent=d.lerr+(Math.abs(d.lerr)<150?" (centred)":d.lerr>0?" (steering left)":" (steering right)");
+  $("lbar").style.left="calc("+(50-d.lerr/20)+"% - 2px)";
+  const lf=[];if(d.lflags&8)lf.push("on the line");if(d.lflags&2)lf.push("can't see it, driving straight");if(d.lflags&4)lf.push("LOST");
+  $("lflags").textContent=lf.join(", ")||"no reading";
+  $("barcode").textContent=BARCODES[d.bc]+(d.letter>32?" ('"+String.fromCharCode(d.letter)+"')":"");
+  $("hump").textContent=d.hump?"YES":"no";
+  $("peak").textContent=(d.peak/10).toFixed(1)+" mm";
+  $("servo").textContent=d.servo+"°";
+  $("obs").textContent=d.obst?(d.width+" / "+d.closest+" mm"):"-";
+  $("bypass").textContent=["none","left","right","?"][d.side]+" / "+d.fails;
+
+  /* live checks from telemetry */
+  const active=d.state>=2&&d.state<=5;
+  if(active&&(d.lflags&2)) setIssue("blind",{sev:"warn",title:"Car can't see the line right now",
+    what:"All sensors read white, so the car drives straight. After 10 s without the line it stops with LINE LOST.",
+    why:["Line too faint for the current calibration","Car overshot a curve"],fix:["Watch the Line sensors card","If CENTRE stays low while on the line, redo calibration (RESET with the centre sensor on the line)"],time:now()});
+  else clearIssue("blind");
+  const hi=Math.max(Math.abs(d.vl),Math.abs(d.vr)),lo=Math.min(Math.abs(d.vl),Math.abs(d.vr));
+  oneSided=(active&&hi>40&&lo<5)?oneSided+1:0;
+  if(oneSided>=10) setIssue("onewheel",{sev:"warn",title:"Only one wheel is turning",
+    what:"For 2 s one wheel moved at "+hi+" mm/s and the other at about 0 (L "+d.vl+", R "+d.vr+" mm/s).",
+    why:["The car is in a tight correction (normal for a moment)","The stopped wheel is blocked, or its encoder isn't counting"],
+    fix:["If it lasts, lift the car and check both wheels spin","Check the encoder cable of the wheel showing 0"],time:now()});
+  else if(oneSided===0) clearIssue("onewheel");
+  render();
+}
+
+/* ---------- car log parsing ---------- */
+function annotate(t){
+  return t.replace(/state (\d+) -> (?:state )?(\d+)/,(m,a,b)=>"state "+a+" -> "+b+" ("+stName(a)+" -> "+stName(b)+")")
+          .replace(/ignored in state (\d+)/,(m,a)=>"ignored in state "+a+" ("+stName(a)+")");
+}
+function sevOf(t){
+  if(/^\[TEST\] \S+ FAIL\b/.test(t)) return "bad";
+  if(/^\[TEST\] \S+ PASS\b/.test(t)) return "ok";
+  if(/^\[BENCH\]/.test(t)) return "bench";
+  if(/FAULT|STALL|ENCODER \w+ silent|FAILED|NOT READY|not answering|failing|IMPACT|LINE LOST|LOCKED|selftest (LEFT|RIGHT)|NO FREE|WATCHDOG/.test(t)) return "bad";
+  if(/LOW CONTRAST|overrun|queue full|ignored|rejected|no echo|association failure|FAILED|retrying/.test(t)) return "warn";
+  if(/passed|calibration OK|connected|link up/.test(t)) return "ok";
+  if(NOISE.test(t)) return "dim";
+  return "";
+}
+
+function setCheck(key,state,text){checks[key]={state,text};renderChecks();}
+function resetBoot(){checks={};lastSelftest={};calib=null;baseline=null;spikes=0;$("spikes").textContent="0";
+  ["selftest","calib","tilt","imu","enc","stall","impact","lineLost","wdt","sensors","pio","dma","restart"].forEach(clearIssue);
+  setCheck("1selftest","wait","Wheel self-test: waiting");setCheck("2calib","wait","Line calibration: waiting");
+  setCheck("3imu","wait","Tilt sensor baseline: waiting");setCheck("4wifi","wait","Wi-Fi / MQTT: waiting");}
+
+function onCarLog(raw){
+  const m=/^(\d+) (.*)$/s.exec(raw);
+  const up=m?+m[1]:null,t=(m?m[2]:raw).trim();
+  const entry={up,t,sev:sevOf(t),wall:now()};
+  carLog.push(entry);if(carLog.length>1500)carLog.shift();
+  parse(t,up);
+  renderLog();
+}
+
+function parse(t,up){
+  let m;
+  const when=(up!=null?"car time "+fmtUp(up):"")+" ("+now()+")";
+  if(/=== IS11 autonomous car/.test(t)){resetBoot();dlog("car log: boot");return;}
+  if(/WATCHDOG RESET/.test(t)) setIssue("wdt",{sev:"bad",title:"Last restart was caused by the watchdog",
+     what:"The firmware stopped responding and the Pico rebooted itself.",why:["A task hung or ran too long"],fix:["Copy the car log and send it so the cause can be found"],time:when});
+  if((m=/^motion: selftest (LEFT|RIGHT) (-?\d+) counts/.exec(t))){
+    const n=+m[2],side=m[1].toLowerCase();lastSelftest[m[1]]=n;
+    const why=n<0?"It turned BACKWARD ("+n+" counts): the "+side+" motor or encoder direction setting is wrong."
+              :n<50?"It barely moved ("+n+" counts): motor not powered, wheel blocked, or encoder unplugged."
+              :"It moved only "+n+" counts, less than expected.";
+    setIssue("selftest",{sev:"bad",title:"Self-test failed on the "+side.toUpperCase()+" wheel",
+      what:"At start-up each wheel is driven forward alone and must count forward. "+why,
+      detail:t,why:n<0?["Motor wires or encoder wires on that side are reversed compared with the code settings (MOTOR_L/R_INVERT, MOTION_ENC_L/R_INVERT)"]:["Battery switch off during the test","Encoder cable loose","Motor cable loose"],
+      fix:n<0?["Watch the "+side+" wheel at power-on: does it roll forward or backward?","Tell Claude which way it spins and the count"]:["Battery on, wheels off the ground or free to move","Check cables, then press RESET"],time:when});
+    setCheck("1selftest","bad","Wheel self-test: "+m[1]+" wheel "+n+" counts");}
+  if(/self-check passed/.test(t)){clearIssue("selftest");setCheck("1selftest","ok","Wheel self-test: passed (both wheels count forward)");}
+  if((m=/^line: calibration (OK|LOW CONTRAST)[^L]*L (\d+)-(\d+)\s+C (\d+)-(\d+)\s+R (\d+)-(\d+)/.exec(t))){
+    calib={ok:m[1]==="OK",L:[+m[2],+m[3]],C:[+m[4],+m[5]],R:[+m[6],+m[7]]};
+    const rng=k=>calib[k][0]+" to "+calib[k][1];
+    if(calib.ok){clearIssue("calib");setCheck("2calib","ok","Line calibration: OK (centre "+rng("C")+")");}
+    else{setIssue("calib",{sev:"warn",title:"Line calibration failed (low contrast)",
+      what:"During the start-up sweep the CENTRE sensor didn't see a big enough difference between black and white, so old default values are used. The line may look too faint or too dark.",
+      detail:"left "+rng("L")+"   centre "+rng("C")+"   right "+rng("R")+"   (need a range of 800+)",
+      why:["Car not placed on the line at power-on","Centre sensor not over the line","Sensors too high above the floor"],
+      fix:["Put the car on the line, centre sensor over the black","Press RESET and leave it alone during the sweep"],time:when});
+      setCheck("2calib","warn","Line calibration: LOW CONTRAST, defaults used (centre "+rng("C")+")");}}
+  if((m=/^imu: baseline x (-?\d+) mg, y (-?\d+) mg/.exec(t))){
+    baseline={x:+m[1],y:+m[2]};
+    if(Math.abs(baseline.x)>150||Math.abs(baseline.y)>150){
+      setCheck("3imu","warn","Tilt sensor: car was tilted at start (x "+baseline.x+", y "+baseline.y+" mg)");
+      setIssue("tilt",{sev:"warn",title:"Car was not level at start-up",what:"The tilt sensor learns 'flat' at power-on. The car was tilted, so hump detection may be wrong.",detail:t,why:["Car on a slope or held in the hand at power-on"],fix:["Power on with the car flat on the floor"],time:when});}
+    else{clearIssue("tilt");setCheck("3imu","ok","Tilt sensor: level (x "+baseline.x+", y "+baseline.y+" mg)");}}
+  if(/LSM303DLHC not answering|imu: I2C read failing/.test(t)){setCheck("3imu","bad","Tilt sensor: not answering on I2C");
+    setIssue("imu",{sev:"bad",title:"Tilt sensor (IMU) not answering",what:"I2C reads to the LSM303 failed.",detail:t,why:["Cable loose (SDA GP16, SCL GP17)"],fix:["Reseat the IMU cable","Power-cycle"],time:when});}
+  if((m=/^ctrl: sensors not ready at start: IMU (\S+), IR (\S+)/.exec(t))) setIssue("sensors",{sev:"bad",title:"A sensor wasn't ready at start-up",
+     what:"Start-up waited too long for: "+(m[1]!=="ok"?"tilt sensor ":"")+(m[2]!=="ok"?"line sensors":""),detail:t,why:["Sensor cable loose"],fix:["Check cables, press RESET"],time:when});
+  if((m=/^motion: STALL (\w+) wheel: set (-?\d+) mm\/s, measured L (-?\d+) R (-?\d+) mm\/s, duty L (-?\d+) R (-?\d+)/.exec(t))){
+    lastStall={wheel:m[1],set:+m[2],vl:+m[3],vr:+m[4],dl:+m[5],dr:+m[6],when};
+    $("lastMotion").textContent="stall "+m[1]+" at "+now();}
+  if((m=/^motion: ENCODER (\w+) silent: counts in 1 s L (-?\d+) R (-?\d+)/.exec(t))){
+    setIssue("enc",{sev:"bad",title:m[1]+" encoder stopped counting",what:"The motors ran for 1 s but the "+m[1].toLowerCase()+" encoder counted nothing while the other counted "+(m[1]==="LEFT"?m[3]:m[2])+".",
+      detail:t,why:["Encoder cable loose on that wheel","Encoder disc/magnet slipped"],fix:["Check the encoder cable","Turn the wheel by hand with the car stopped and watch the Encoder L / R numbers change"],time:when});
+    $("lastMotion").textContent="encoder "+m[1]+" at "+now();}
+  if((m=/^imu: IMPACT (\d+) mg/.exec(t))) setIssue("impact",{sev:"warn",title:"Bump of "+(m[1]/1000).toFixed(1)+" g",what:"Strong jolt detected; the car stopped.",detail:t,why:["Hit something, picked up, or dropped"],fix:["Put it back on the line and press START"],time:when});
+  if(/^imu: spike/.test(t)){spikes++;$("spikes").textContent=spikes;}
+  if(/^line: LINE LOST/.test(t)) setIssue("lineLost",{sev:"warn",title:"Line lost",what:"All sensors saw white for 10 s of driving.",detail:lastIr?("last sensor reading: "+lastIr.txt):t,
+     why:["Drove off the line","Calibration makes the line look faint"],fix:["Check the Line sensors card on the line","Put the car back and press START"],time:when});
+  if((m=/^scan: OBSTACLE at (\d+) mm/.exec(t))){usLastAlert=+m[1];$("usAlert").textContent=(m[1]/10).toFixed(1)+" cm at "+now();$("usResult").textContent="scanning ...";}
+  if((m=/^scan: profile kind (\d+) side (\d+) width (\d+) closest (\d+) offset (\d+) \((\d+) ms\)/.exec(t))){
+    const side=["none (no gap)","LEFT","RIGHT"][+m[2]]||m[2];
+    $("usWidth").textContent=(+m[4]===0)?"obstacle gone":(m[3]/10).toFixed(1)+" / "+(m[4]/10).toFixed(1)+" cm";
+    $("usSide").textContent=side;$("usOffset").textContent=(m[5]/10).toFixed(1)+" cm";$("usTime").textContent=m[6]+" ms";
+    $("usResult").textContent=(+m[2]===0&&+m[4]!==0)?"too wide: reverse + rescan":"going around ...";}
+  if((m=/^ctrl: bypass complete in (\d+) ms/.exec(t))) $("usResult").textContent="done in "+(m[1]/1000).toFixed(1)+" s";
+  if((m=/^ctrl: bypass attempt failed \((.*)\), (\d+) of 2/.exec(t))) $("usResult").textContent="FAILED ("+m[1]+"), "+m[2]+" of 2";
+  if(/^ctrl: obstacle gone/.test(t)) $("usResult").textContent="obstacle gone, following the line";
+  if(/^scan: no echo x3/.test(t)) $("usResult").textContent="no echo x3";
+  if(/ENCODER PIO LOAD FAILED/.test(t)) setIssue("pio",{sev:"bad",title:"Encoder hardware block failed to load",what:"The PIO program for the encoders couldn't be loaded.",detail:t,why:["Firmware problem"],fix:["Reflash, then send the log"],time:when});
+  if(/DMA ring overrun/.test(t)) setIssue("dma",{sev:"info",title:"Line sensor readings were skipped",what:"The line task fell behind and skipped some samples. Occasional is OK.",detail:t,why:["CPU busy (lots of logging)"],fix:["Ignore unless it repeats a lot"],time:when});
+  if((m=/^ctrl: command (\d+) ignored in state (\d+)/.exec(t))){
+    const cmd=["?","START","STOP","RESET"][+m[1]]||m[1];
+    dlog(cmd+" was ignored because the car was in "+stName(m[2])+(m[2]==="8"?": press RESET first":m[2]==="0"?": wait for the start-up checks":""));}
+  if(/^comms: link state \d+ -> 3/.test(t)||/^mqtt: connected/.test(t)) setCheck("4wifi","ok","Wi-Fi / MQTT: connected");
+  if(/association failure/.test(t)) setCheck("4wifi","warn","Wi-Fi: hotspot refused the car, retrying (WPA2, 2.4 GHz, battery saver off)");
+  if((m=/^ir: raw L\s*(\d+) C\s*(\d+) R\s*(\d+)\s+norm L\s*(\d+) C\s*(\d+) R\s*(\d+)\s+err\s*(-?\d+)/.exec(t))){
+    if(performance.now()-irLive>2000){lastIr={raw:[+m[1],+m[2],+m[3]],n:[+m[4],+m[5],+m[6]],err:+m[7],txt:t.slice(4)};showIr();}}
+}
+
+function showIr(){
+  const k=["L","C","R"];
+  k.forEach((s,i)=>{$("ir"+s).style.height=Math.min(100,lastIr.n[i]/10)+"%";$("th"+s).style.bottom="40%";
+    $("ir"+s+"v").textContent=lastIr.n[i]+" ("+lastIr.raw[i]+")";});
+}
+
+
+/* ---------- ultrasonic ---------- */
+function radarXY(deg,mm){const a=deg*Math.PI/180,r=Math.min(mm,1000)*0.3;return [r*Math.cos(a),-r*Math.sin(a)];}
+(function grid(){let g="";for(let cm=20;cm<=100;cm+=20){const r=cm*3;g+='<circle cx="0" cy="0" r="'+r+'"></circle><text x="'+(r-4)+'" y="14" text-anchor="end">'+cm+'</text>';}
+  [30,60,90,120,150].forEach(d=>{const p=radarXY(d,1000);g+='<line x1="0" y1="0" x2="'+p[0].toFixed(0)+'" y2="'+p[1].toFixed(0)+'"></line>';});
+  const sr=US_STOP_CM*3;g+='<path d="M '+(-sr)+' 0 A '+sr+' '+sr+' 0 0 1 '+sr+' 0" fill="none" stroke="var(--bad)" stroke-dasharray="4 4"></path>';
+  $("radarGrid").innerHTML=g;$("usStop").style.left=(US_STOP_CM/60*100)+"%";})();
+function showUs(state,deg,mm){
+  const cm=mm/10,far=mm>=1000,none=mm===0;
+  usHist.push(none?0:1);if(usHist.length>20)usHist.shift();
+  $("usDist").textContent=none?"no echo":far?"> 1 m":cm.toFixed(1)+" cm";
+  $("usDist").style.color=none?"var(--mute)":(!far&&cm<=US_STOP_CM)?"var(--bad)":(!far&&cm<=30)?"var(--warn)":"";
+  const f=$("usFill");f.style.width=(none?0:Math.min(100,(far?60:cm)/60*100))+"%";
+  f.style.background=(!far&&!none&&cm<=US_STOP_CM)?"var(--bad)":(!far&&!none&&cm<=30)?"var(--warn)":"var(--ok)";
+  $("usState").textContent=US_STATES[state]||("state "+state);
+  $("usServo").textContent=deg+"° ("+(deg===90?"straight ahead":deg<90?"looking right":"looking left")+")";
+  const ok=usHist.reduce((a,b)=>a+b,0);$("usEcho").textContent=ok+" / "+usHist.length;
+  const p=radarXY(deg,none?1000:mm);$("radarRay").setAttribute("x2",p[0].toFixed(1));$("radarRay").setAttribute("y2",p[1].toFixed(1));
+  if(usHist.length>=20&&ok<5) setIssue("usNoEcho",{sev:"warn",title:"Ultrasonic sensor gives no echo",what:"Almost no ping in the last 20 came back.",
+    why:["TRIG and ECHO swapped (TRIG = yellow = GP0, ECHO = white = GP1 on Grove port 1)","Sensor not powered, or a 5 V-only HC-SR04 on 3.3 V","Pointing at something soft or at a steep angle"],
+    fix:["Check the Grove cable on port 1","Use the 3.3 V version (HC-SR04P)","Hold a book 20 cm in front and watch the distance"],time:now()});
+  else if(ok>=10) clearIssue("usNoEcho");
+}
+function drawSweep(d){
+  const pts=d.map((mm,i)=>({deg:30+5*i,mm})).filter(p=>p.mm>0);
+  const near=pts.filter(p=>p.mm<1000).map(p=>p.mm);const closest=near.length?Math.min(...near):null;
+  $("radarPts").innerHTML=pts.map(p=>{const xy=radarXY(p.deg,p.mm);const obst=closest!==null&&p.mm<1000&&p.mm<=closest+150;
+    return '<circle cx="'+xy[0].toFixed(1)+'" cy="'+xy[1].toFixed(1)+'" r="'+(obst?7:5)+'" fill="'+(p.mm>=1000?"var(--mute)":obst?"var(--bad)":"var(--ok)")+'"></circle>';}).join("");
+}
+
+/* ---------- issues ---------- */
+function setIssue(k,v){liveIssues[k]=v;render();}
+function clearIssue(k){if(liveIssues[k]){delete liveIssues[k];render();}}
+
+function faultIssues(){
+  if(!last) return [];
+  return FAULTS.filter(x=>last.faults&x.bit).map(x=>{
+    const it=Object.assign({},x,{key:"f"+x.bit});
+    if(x.bit===0x01&&lastStall){
+      it.title="Wheel stall: "+lastStall.wheel+" wheel";it.time=lastStall.when;
+      it.detail="target "+lastStall.set+" mm/s, measured L "+lastStall.vl+" R "+lastStall.vr+" mm/s, motor power L "+(lastStall.dl/10)+"% R "+(lastStall.dr/10)+"%";}
+    if(x.bit===0x02){const s=Object.entries(lastSelftest).map(([w,n])=>w+" "+n+" counts").join(", ");if(s)it.detail="self-test: "+s;}
+    if(x.bit===0x20&&calib&&!calib.ok) it.why=["Calibration failed at start-up (LOW CONTRAST), so the line looks faint"].concat(x.why);
+    return it;});
+}
+
+function issueHtml(x){
+  return '<div class="issue '+x.sev+'"><h3><span>'+esc(x.title)+'</span>'+(x.time?'<small>'+esc(x.time)+'</small>':'')+'</h3>'+
+   '<p>'+esc(x.what)+'</p>'+(x.detail?'<div class="detail">'+esc(x.detail)+'</div>':'')+
+   (x.why&&x.why.length?'<div class="lbl">Likely causes</div><ul>'+x.why.map(w=>'<li>'+esc(w)+'</li>').join("")+'</ul>':'')+
+   (x.fix&&x.fix.length?'<div class="lbl">What to do</div><ul>'+x.fix.map(w=>'<li>'+esc(w)+'</li>').join("")+'</ul>':'')+'</div>';
+}
+
+const SEVR={bad:0,warn:1,info:2,ok:3};
+function render(){
+  let list=faultIssues();
+  const fbits=last?last.faults:0;
+  for(const [k,v] of Object.entries(liveIssues)){
+    /* fold log details into the matching fault card instead of repeating */
+    if((k==="selftest"||k==="enc")&&(fbits&0x02)) {list=list.map(x=>x.key==="f2"?Object.assign(x,{title:v.title,what:v.what,detail:v.detail,why:v.why,fix:v.fix}):x);continue;}
+    if(k==="impact"&&(fbits&0x10)){list=list.map(x=>x.key==="f16"?Object.assign(x,{title:v.title,detail:v.detail,time:v.time}):x);continue;}
+    if(k==="lineLost"&&(fbits&0x20)){list=list.map(x=>x.key==="f32"?Object.assign(x,{detail:v.detail,time:v.time}):x);continue;}
+    if(k==="imu"&&(fbits&0x04)){list=list.map(x=>x.key==="f4"?Object.assign(x,{detail:v.detail}):x);continue;}
+    list.push(Object.assign({key:k},v));
+  }
+  /* connection problems first */
+  const conn=connIssue();if(conn) list.unshift(conn);
+  list.sort((a,b)=>SEVR[a.sev]-SEVR[b.sev]);
+  $("issues").innerHTML=list.map(issueHtml).join("");
+
+  const hl=$("headline");
+  let sev="ok",title,text;
+  if(list.length){sev=list[0].sev;title=list[0].title;text=list.length>1?(list.length-1)+" more below":"";}
+  else if(last){title=stName(last.state);text=STATE_HELP[last.state];sev=last.state===8?"bad":last.state===7?"warn":"ok";
+    if(last.state===1)title="Ready: press START";if(last.state===2)title="All good: following the line";}
+  else{title="Waiting for the car";text="";sev="info";}
+  hl.className=sev==="ok"?"":sev;$("hlIcon").textContent=sev==="ok"?"✓":sev==="info"?"i":"!";
+  $("hlTitle").textContent=title;$("hlText").textContent=text?" "+text:"";
+}
+
+function connIssue(){
+  if(!client||!client.connected) return {sev:"bad",title:"Dashboard not connected to the broker",
+    what:"The page can't reach Mosquitto on "+$("url").value+".",
+    why:["Mosquitto isn't running, or was started without tools/mosquitto.conf (needs the 9001 websocket listener)","The Windows Mosquitto service is running instead of your own copy"],
+    fix:["In a terminal: mosquitto -c tools\\mosquitto.conf -v","Then click Connect"]};
+  const age=lastT?(performance.now()-lastT)/1000:Infinity;
+  if(carStatus==="offline"||age>3) return {sev:"bad",title:carStatus==="offline"?"Car is offline":"No data from the car for "+(isFinite(age)?Math.round(age)+" s":"a while"),
+    what:"The broker is fine, but the car isn't sending telemetry.",
+    why:["Car switched off or rebooting","Phone hotspot off, asleep, or battery saver on","Laptop IP changed (car is built for 10.100.253.79)","Car too far from the phone"],
+    fix:["Check the hotspot is on and the car is listed as connected","On the laptop run ipconfig: Wi-Fi IPv4 must still be 10.100.253.79","Power-cycle the car","Look at the serial monitor for wifi: lines"]};
+  return null;
+}
+
+function renderChecks(){
+  const keys=Object.keys(checks).sort();
+  $("checks").innerHTML=keys.length?keys.map(k=>{const c=checks[k];
+    const lbl={ok:"OK",bad:"FAIL",warn:"CHECK",wait:"…"}[c.state];
+    return '<div class="check"><span class="st '+c.state+'">'+lbl+'</span><span>'+esc(c.text)+'</span></div>';}).join("")
+    :'<div class="muted small">No boot log seen yet. Press reset on the car (or power-cycle) to see its start-up checks here.</div>';
+}
+
+/* ---------- log view ---------- */
+let renderPending=false;
+function renderLog(){
+  if($("fPause").checked||renderPending) return;
+  renderPending=true;
+  requestAnimationFrame(()=>{renderPending=false;
+    const show=$("fNoise").checked;
+    const rows=carLog.filter(e=>show||!NOISE.test(e.t)).slice(-400);
+    const el=$("carlog"),atEnd=el.scrollTop+el.clientHeight>=el.scrollHeight-20;
+    el.innerHTML=rows.map(e=>'<span class="ll '+e.sev+'"><em>'+(e.up!=null?fmtUp(e.up).padStart(9):"")+'</em>  '+esc(annotate(e.t))+'</span>').join("");
+    if(atEnd) el.scrollTop=el.scrollHeight;
+    $("logCount").textContent=carLog.length+" lines";});
+}
+
+/* ---------- MQTT ---------- */
+function connect(){
+  if(client){client.end(true);client=null;}
+  const url=$("url").value.trim();
+  try{localStorage.setItem("is11url",url);}catch(e){}
+  dlog("connecting to "+url);
+  client=mqtt.connect(url,{clientId:"is11-dash-"+Math.random().toString(16).slice(2,8),reconnectPeriod:2000});
+  client.on("connect",()=>{$("brokerDot").classList.add("on");dlog("broker connected");client.subscribe([T_TLM,T_STATUS,T_LOG,T_IR,T_US,T_SWEEP]);render();});
+  client.on("close",()=>{$("brokerDot").classList.remove("on");render();});
+  client.on("error",e=>dlog("error: "+e.message));
+  client.on("message",(t,p)=>{
+    if(t===T_STATUS){carStatus=new TextDecoder().decode(p);$("carStatus").textContent=carStatus;dlog("car "+carStatus);render();return;}
+    if(t===T_LOG){onCarLog(new TextDecoder().decode(p));return;}
+    if(t===T_US){const v=new TextDecoder().decode(p).trim().split(/\s+/).map(Number);if(v.length>=3)showUs(v[0],v[1],v[2]);return;}
+    if(t===T_SWEEP){const v=new TextDecoder().decode(p).trim().split(/\s+/).map(Number);if(v.length>=26)drawSweep(v.slice(1,26));return;}
+    if(t===T_IR){const v=new TextDecoder().decode(p).trim().split(/\s+/).map(Number);
+      if(v.length>=7){irLive=performance.now();lastIr={raw:v.slice(0,3),n:v.slice(3,6),err:v[6],txt:"raw L "+v[0]+" C "+v[1]+" R "+v[2]+"  norm L "+v[3]+" C "+v[4]+" R "+v[5]};showIr();}
+      return;}
+    try{show(decode(p));}catch(e){dlog("bad frame: "+e);}
+  });
+}
+
+function send(name){
+  if(!client||!client.connected){dlog("not connected");return;}
+  const code={start:1,stop:2,reset:3}[name];
+  cmdSeq=(cmdSeq+1)&255;
+  client.publish(T_CMD,new Uint8Array([1,code,cmdSeq]),{qos:1});
+  dlog("sent "+name.toUpperCase());
+}
+
+/* car dot / age ticker */
+setInterval(()=>{
+  const age=lastT?(performance.now()-lastT)/1000:Infinity;
+  const dot=$("carDot");dot.classList.toggle("on",age<1.5&&carStatus!=="offline");dot.classList.toggle("mid",age>=1.5&&age<3);
+  $("age").textContent=isFinite(age)?age.toFixed(1)+" s ago":"-";
+  render();
+},1000);
+
+try{const u=localStorage.getItem("is11url");if(u)$("url").value=u;}catch(e){}
+$("connect").onclick=connect;
+document.querySelectorAll("[data-cmd]").forEach(b=>b.onclick=()=>send(b.dataset.cmd));
+$("mark").onclick=()=>{if(!last){dlog("no telemetry yet");return;}mark={l:last.el,r:last.er};$("cpr").textContent="L 0 / R 0";dlog("marked encoders");};
+$("fNoise").onchange=renderLog;$("fPause").onchange=renderLog;
+$("clearLog").onclick=()=>{carLog=[];renderLog();};
+$("copyLog").onclick=()=>{const txt=carLog.map(e=>(e.up!=null?(e.up/1000).toFixed(3)+"  ":"")+e.t).join("\n");
+  (navigator.clipboard?navigator.clipboard.writeText(txt):Promise.reject()).then(()=>dlog("car log copied ("+carLog.length+" lines)"),()=>{
+    const ta=document.createElement("textarea");ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand("copy");ta.remove();dlog("car log copied");});};
+document.addEventListener("keydown",e=>{if(e.code==="Space"&&e.target.tagName!=="INPUT"){e.preventDefault();send("stop");}});
+renderChecks();render();connect();
+</script>
+</body>
+</html>
