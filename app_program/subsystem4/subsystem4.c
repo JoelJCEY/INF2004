@@ -1,6 +1,7 @@
 /*
  *	subsystem4.c
- *	Subsystem 4 -- IMU: 10 ms cyclic handler and imu_task.
+ *	Subsystem 4 -- Terrain Monitoring: creates its cyclic handler and
+ *	starts imu_task.  The I2C bus is brought up by imu_task itself.
  */
 
 #include "subsystem4.h"
@@ -15,7 +16,7 @@ EXPORT ER subsystem4_init(void)
 	ccyc.cycatr = TA_HLNG;
 	ccyc.cychdr = (FP)imu_cyclic_handler;
 	ccyc.cyctim = S4_PERIOD_MS;
-	ccyc.cycphs = 100;	/* give the sensor time to power up */
+	ccyc.cycphs = S4_PERIOD_MS;
 	cyc_imu = tk_cre_cyc(&ccyc);
 	return (cyc_imu < E_OK) ? cyc_imu : E_OK;
 }
@@ -27,10 +28,4 @@ EXPORT ER subsystem4_start(void)
 		return tid_imu;
 	}
 	return tk_sta_cyc(cyc_imu);
-}
-
-EXPORT void imu_cyclic_handler(void *exinf)
-{
-	(void)exinf;
-	(void)tk_wup_tsk(tid_imu);
 }

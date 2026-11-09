@@ -37,6 +37,11 @@
  * CYW43_LINK_FAIL until the next power cycle, so re-issue the join on a fixed
  * backoff for as long as the link is down. */
 #define WIFI_REJOIN_DELAY_US (5 * 1000 * 1000ull)
+/* IS11: a join that neither succeeds nor reports a failure (seen after an
+ * association failure on a phone hotspot: no retry ever followed) is torn
+ * down and restarted after this long. */
+#define WIFI_STUCK_US        (25 * 1000 * 1000ull)
+static uint64_t last_join_us;
 
 /* Overridable from the makefile if an AP needs something else. MIXED accepts
  * both TKIP and AES; the driver treats it the same as WPA2_AES_PSK for a
@@ -173,6 +178,7 @@ static int32_t wifi_try_join(void)
     int32_t err;
 
     tm_printf((UB*)"wifi: joining \"%s\" ...\n", WIFI_SSID);
+    last_join_us = time_us_64();
 
     err = cyw43_wifi_join(&cyw43_state,
                           strlen(WIFI_SSID), (const uint8_t*)WIFI_SSID,
@@ -291,6 +297,9 @@ void cyw43_utk_task(int32_t stacd, void *exinf)
             prev_link_status = radio_status.link_status;
             if(radio_status.link_status == CYW43_LINK_UP) {
                 uint32_t ip = radio_status.ip_addr;
+                /* IS11: no radio power-save.  Phone hotspots drop clients
+                 * that doze, which showed up as repeated disconnects. */
+                (void)cyw43_wifi_pm(&cyw43_state, CYW43_NONE_PM);
                 tm_printf((UB*)"wifi: link up, ip=%d.%d.%d.%d\n",
                           (int)(ip & 0xff), (int)((ip >> 8) & 0xff),
                           (int)((ip >> 16) & 0xff), (int)((ip >> 24) & 0xff));
@@ -317,6 +326,15 @@ void cyw43_utk_task(int32_t stacd, void *exinf)
                  * -3..3), or a genuine repeat failure would be swallowed. */
                 prev_link_status = 0x7fffffff;
             }
+        }
+
+        /* IS11: stuck join watchdog (see WIFI_STUCK_US) */
+        if(radio_status.link_status != CYW43_LINK_UP && rejoin_at == 0 &&
+           last_join_us != 0 && (time_us_64() - last_join_us) > WIFI_STUCK_US) {
+            tm_printf((UB*)"wifi: no connection after 25 s, restarting the join\n");
+            (void)cyw43_wifi_leave(&cyw43_state, CYW43_ITF_STA);
+            (void)wifi_try_join();
+            prev_link_status = 0x7fffffff;
         }
 #else
         was_scanning = radio_status.scan_active != 0;

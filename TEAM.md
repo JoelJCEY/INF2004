@@ -1,7 +1,7 @@
 # Team and subsystems
 
-The tables are pre-filled with the **example** in `app_program/` (marked
-*example*). Replace those rows with your own as you replace the example code.
+Filled in for the IS11 design (Week 6 design review + Tribunal 1).  The
+example code from the template has been replaced.
 
 Fill this in at the start of the project and keep it up to date. It is the
 single place that says **who owns what**, so that five people can work in
@@ -17,11 +17,14 @@ subsystem, ask its owner or open a pull request for them to review.
 
 | # | Subsystem (what it does) | Student ID | GitHub username | Code | Tests |
 |---|---|---|---|---|---|
-| 1 | Wi-Fi, MQTT telemetry and commands (Buddy 1) | | | `app_program/subsystem1/` | `testing/subsystem1/` |
-| 2 | Motion control: motors, encoders, PID (Buddy 2) | | | `app_program/subsystem2/` | `testing/subsystem2/` |
-| 3 | IR line following and barcode decoding (Buddy 3) | | | `app_program/subsystem3/` | `testing/subsystem3/` |
-| 4 | IMU: tilt, hump height, impact (Buddy 4) | | | `app_program/subsystem4/` | `testing/subsystem4/` |
-| 5 | Servo + ultrasonic scanning, obstacle bypass, ctrl_task (Buddy 5) | | | `app_program/subsystem5/` | `testing/subsystem5/` |
+| 1 | Communication: Wi-Fi/MQTT telemetry, remote START/STOP/RESET (`comms_task`) | 2501327 (Daryl) | | `app_program/subsystem1/` | `testing/subsystem1/` |
+| 2 | Motion Control: motors, PIO encoders, 20 ms PID, moves/turns, stall (`motion_task`) | 2501113 (Joel) | | `app_program/subsystem2/` | `testing/subsystem2/` |
+| 3 | Line & Barcode Sensing: IR ADC+DMA, line error, Code 39, junctions (`line_task`) | 2500991 (Gillton) | | `app_program/subsystem3/` | `testing/subsystem3/` |
+| 4 | Terrain Monitoring: LSM303DLHC, humps, peak height, impact (`imu_task`) | 2501315 (Xavier) | | `app_program/subsystem4/` | `testing/subsystem4/` |
+| 5 | Obstacle Scanning (`scan_task`) + Vehicle Controller (`ctrl_task`, integration lead) | 2500118 (Marcus) | | `app_program/subsystem5/` | `testing/subsystem5/` |
+
+Team build: `make SMP=0 NET=lwip MQTT=1 -j8` (design 1.0 uses the single-core
+build; MQTT needs `config/wifi_secrets.h`, copied from the example).
 
 Shared files (`app_program/app_main.c`, `app_program/app.h`, this file)
 are changed only by agreement of the team. The exception is claiming an empty
@@ -48,32 +51,32 @@ fixed.
 | Pin | Owner | Used for |
 |---|---|---|
 | GP23, GP24, GP25, GP29 | *reserved* | Pico W radio |
-| GP0 | | (taken whenever the team builds with `CRASH_REPORT=1`) |
-| GP1 | | (taken whenever the team builds with `CRASH_REPORT=1`) |
-| GP2 | S2 | left encoder A (Grove 2) |
-| GP3 | S2 | left encoder B (Grove 2), PWM slice 1 edge counter |
-| GP4 | S2 | right encoder A (Grove 3) |
-| GP5 | S2 | right encoder B (Grove 3), PWM slice 2 edge counter |
-| GP6 | S5 | HC-SR04+ TRIG (Grove 5; its GP26 wire left unconnected) |
-| GP7 | S5 | HC-SR04+ ECHO (Grove 7, cable shared with IR_R) |
-| GP8 | S2 | left motor M1A, PWM 4A |
-| GP9 | S2 | left motor M1B, PWM 4B |
-| GP10 | S2 | right motor M2A, PWM 5A |
-| GP11 | S2 | right motor M2B, PWM 5B |
-| GP12 | S5 | servo (servo port 1), PWM 6A, 50 Hz |
-| GP13 | | |
-| GP14 | | |
-| GP15 | | |
-| GP16 | S4 | I2C0 SDA, IMU (Grove 4) |
-| GP17 | S4 | I2C0 SCL, IMU (Grove 4) |
-| GP18 | *unclaimed* | on-board NeoPixel |
-| GP19 | | |
-| GP20 | S5 | on-board START button, ctrl_task (pressed = 0) |
-| GP21 | S5 | on-board STOP button, ctrl_task (hold both 1 s = RESET) |
-| GP22 | *unclaimed* | on-board buzzer, PWM 3A |
-| GP26 | S3 | IR left, ADC0 (Grove 6) |
-| GP27 | S3 | IR centre, ADC1 (Grove 6) |
-| GP28 | S3 | IR right, ADC2 (Grove 7) |
+| GP0 | S5 scan_task | HC-SR04+ TRIG (Grove 1). **Unplug the ultrasonic for `CRASH_REPORT=1`** |
+| GP1 | S5 scan_task | HC-SR04+ ECHO, timed by PWM slice 0 (B input, 31 Oct) (Grove 1, 3.3 V module only) |
+| GP2 | S2 motion_task | left encoder A (Grove 2, PIO) |
+| GP3 | S2 motion_task | left encoder B (Grove 2, PIO) |
+| GP4 | S2 motion_task | right encoder A (Grove 3, PIO) |
+| GP5 | S2 motion_task | right encoder B (Grove 3, PIO) |
+| GP6 | | spare (Grove 5 must stay EMPTY: it shares GP26) |
+| GP7 | | spare (loose wire on the Grove 7 cable, insulated) |
+| GP8 | S2 motion_task | M1A left motor, PWM 4A |
+| GP9 | S2 motion_task | M1B left motor, PWM 4B |
+| GP10 | S2 motion_task | M2A right motor, PWM 5A |
+| GP11 | S2 motion_task | M2B right motor, PWM 5B |
+| GP12 | S5 scan_task | scan servo, PWM 6A, 50 Hz (Servo port 1) |
+| GP13 | | spare |
+| GP14 | | spare |
+| GP15 | | spare |
+| GP16 | S4 imu_task | I2C0 SDA, LSM303DLHC (Grove 4) |
+| GP17 | S4 imu_task | I2C0 SCL, LSM303DLHC (Grove 4) |
+| GP18 | S5 ctrl_task | status NeoPixels (PIO WS2812) |
+| GP19 | | spare |
+| GP20 | S5 ctrl_task | START button (on board) |
+| GP21 | S5 ctrl_task | STOP button (on board) |
+| GP22 | S5 ctrl_task | piezo buzzer, PWM 3A |
+| GP26 | S3 line_task | IR_L, ADC0 (Grove 6) |
+| GP27 | S3 line_task | IR_C, ADC1 (Grove 6) |
+| GP28 | S3 line_task | IR_R, ADC2 (Grove 7, VBAT-sense jumper OPEN) |
 
 ## 3. Peripherals
 
@@ -106,23 +109,21 @@ the drivers have no locking to stop it.
 | Peripheral | Owner subsystem | Owning task | Pins |
 |---|---|---|---|
 | UART1 | | | |
-| I2C0 | S4 | imu_task | GP16, GP17 (kernel driver "iica") |
+| I2C0 | S4 | imu_task (`drv_i2c0.c`, register level) | GP16, GP17 |
 | I2C1 | | | |
 | SPI0 | | | |
 | SPI1 | | | |
-| ADC (register level, round-robin, free-running 3 kHz) | S3 | line_task | GP26–GP28; never ADC3/GP29. Do not open the kernel driver "adca" in this image |
-| DMA (one channel, claimed with dma_claim_unused_channel in Wi-Fi builds) | S3 | line_task | ADC FIFO -> 1 KB ring |
-| PWM slices 1, 2 (encoder count), 4, 5 (motors) | S2 | motion_task | GP3, GP5, GP8–GP11 |
-| PWM slice 6 (servo) | S5 | scan_task | GP12 |
-| TIMER (read only, TIMERAWL) | *shared, read only* | S5 echo timing | |
-| WiFi radio, TCP/IP, MQTT | *kernel* | `cyw43_utk_task` (built in) | GP23–25, GP29 |
-
-**Shared configuration changes made for the PicoCar (agreed by the team):**
-
-| File | Change | Why | Requested by |
-|---|---|---|---|
-| `config/config_device.h` | `DEVCNF_USE_IIC` 0 → 1 | IMU uses the kernel I2C driver | S4 |
-| `device/i2c/sysdepend/rp2040/i2c_cnf_sysdep.h` | I2C0 pins 8/9 → 16/17 | GP8/GP9 are the left motor; the IMU is on Grove 4 | S4 |
+| ADC | S3 | line_task (`drv_ir_adc.c`, round-robin ADC0-2 + DMA). Kernel ADC driver switched OFF (`DEVCNF_USE_ADC 0`) | GP26–GP28 |
+| DMA (1 channel, claimed at run time) | S3 | line_task | — |
+| PIO: encoder program at offset 0, 2 SMs | S2 | motion_task (loaded first in `usermain`) | GP2–GP5 |
+| PIO: WS2812, 1 SM (PIO1 preferred) | S5 | ctrl_task | GP18 |
+| PWM slices 4, 5 | S2 | motion_task | GP8–GP11 |
+| PWM slice 6 | S5 | scan_task | GP12 |
+| PWM slice 0 | S5 | scan_task (echo timer, level mode, 1 MHz) | GP1 |
+| PWM slice 3 | S5 | ctrl_task | GP22 |
+| IO_IRQ_BANK0 (IRQ 13) | S5 | `us_echo_isr` → wakes scan_task | GP1 |
+| Watchdog | S5 | ctrl_task (only feeder, 1 s) | — |
+| WiFi radio, TCP/IP, MQTT | *kernel* | `cyw43_utk_task` (built in); IS11 code runs inside it via `subsystem1/comms_bridge.c` | GP23–25, GP29 |
 
 ### WiFi and MQTT are special
 
@@ -154,17 +155,17 @@ What students *can* do:
 1 is the highest. 1–4 are used by the kernel (USB console 3, WiFi 4). Each subsystem gets its own band by default;
 change it only by team agreement. Write down every task you create.
 
+Agreed order (design Section 3): ctrl > motion > line > scan > imu > comms.
+The numbers live in `app.h` (`APP_PRI_*`).  Open proposal F7: swap scan
+and imu after the A1 jitter logs.
+
 | Subsystem | Priority band | Tasks (name – priority – core) |
 |---|---|---|
-| 5 (integration) | 10 | ctrl_task – 10 – any (SMP=0: one core) |
-| 2 | 11 | motion_task – 11 |
-| 3 | 12 | line_task – 12 |
-| 5 | 13 | scan_task – 13 |
-| 4 | 14 | imu_task – 14 |
-| 1 | 15 | comms_task – 15 |
-
-Order agreed in the design review (Section 3): ctrl > motion > line > scan > imu > comms.
-The kernel's USB console (3) and Wi-Fi service (4) are above all of these.
+| 5 | 10, 13 | ctrl_task – 10 – any; scan_task – 13 – any |
+| 2 | 11 | motion_task – 11 – any |
+| 3 | 12 | line_task – 12 – any |
+| 4 | 14 | imu_task – 14 – any |
+| 1 | 20 | comms_task – 20 – any (lowest, NFR3) |
 
 Core: `TP_PRC1` = core 0, `TP_PRC2` = core 1, or "any".
 
@@ -176,15 +177,21 @@ sends to it or waits on it. Agree on the data format before coding.
 
 | ID | From → To | Mechanism | Object ID name | Data / meaning | Agreed by |
 |---|---|---|---|---|---|
-| IF-01 | S5 (ctrl) → S2 | message buffer (owned by S2) + motion API | `mbf_motion_cmd` | `MOTION_CMD` in `subsystem2.h`; only ctrl_task sends | |
-| IF-02 | S2 → S5 | message buffer + flag bit `FLG_MOTION` (owned by S5) | `mbf_motion_st` | `MOTION_STATUS_MSG` (move done, line found) | |
-| IF-03 | S3 → S2, S5 | latest value + timestamp (one aligned word each) | `s3_line_get()` | line error, flags | |
-| IF-04 | S3 → S5 | message buffer + `FLG_NAV` | `mbf_nav` | `NAV_MSG`: barcode, line lost/found | |
-| IF-05 | S4 → S5 | message buffer + `FLG_TERRAIN` | `mbf_terrain` | `TERRAIN_MSG`: hump start/end, impact, IMU fault | |
-| IF-06 | S4 → S5 (scan) | event flag state bit (set/cleared by S4 only) | `FLG_HUMP_ACTIVE` in `flg_ctrl` | hump in progress | |
-| IF-07 | S5 (scan) → S5 (ctrl) | message buffer + `FLG_OBSTACLE` | `mbf_obstacle` | `OBSTACLE_MSG`: alert, clear, sensor fault | |
-| IF-08 | S5 (ctrl) → S1 | message buffer (owned by S1) | `mbf_telemetry` | `S1_TELEMETRY` every 200 ms | |
-| IF-09 | S2 → all | aligned words, single writer | `s2_distance_mm`, `s2_speed_*`, `s2_enc_*` | odometer, speeds, counts | |
+| IF-01 | S5 ctrl → S1 comms | message buffer (owned by S1), TMO_POL, drop newest when full | `mbf_telemetry` | `TLM_SNAPSHOT` (`subsystem1.h`), every 200 ms | design 6.1, 10.4 |
+| IF-02 | all → S5 ctrl | event flag bits 0-7 (owned by S5) | `flg_sys` | `FLT_xxx` fault reports, latched by ctrl until RESET | design 5.1, 10.4 |
+| IF-03 | S1 comms → S5 ctrl | message buffer + `EVF_REMOTE` (owned by S5) | `mbf_remote` | `REMOTE_MSG` START/STOP/RESET (2 bits) | design 6.1 |
+| IF-04 | S5 ctrl → S5 scan (any reader) | struct copy under mutex `TA_INHERIT` (owned by S5) | `mtx_mission` via `ctrl_get_mission()` | `MISSION_STATE` | design 4, F5 |
+| IF-05 | S5 ctrl → S2 motion | message buffer (owned by S2) via the motion API | `mbf_motion_cmd` | `MOTION_CMD`: `moveForward/moveBackward/turnLeft/turnRight/stop` + follow, limit, lock, reset, self-test | design 11.2, P2 |
+| IF-06 | S2 motion → S5 ctrl | message buffer + `EVF_MOTION` (owned by S5) | `mbf_motion_status` | `MOTION_STATUS` (done, stopped, stall, self-test) | design 8.3 gap 1 |
+| IF-07 | S2 motion → S3, S4, S5 | aligned 32-bit words, single writer | `motion_odo_path_01mm`, `motion_odo_speed`, `motion_enc_count[]` | odometry for 200 mm rules, hump profile, telemetry | design 11.1 |
+| IF-08 | S3 line → S2 motion | one aligned 32-bit word, single writer | `line_latest` | line error + flags + timestamp (latest value, F6) | design 4, F6 |
+| IF-09 | S3 line → S5 ctrl | message buffer + `EVF_NAV` (owned by S5) | `mbf_nav` | `NAV_MSG`: barcode, junction, line lost/found | design 4 |
+| IF-10 | S5 ctrl ↔ S3 line | request word (writer ctrl) + result word (writer line) | `line_cal_request`, `line_cal_result` | IR calibration sweep in INITIALISING | design 5 |
+| IF-11 | S4 imu → S5 ctrl | message buffer + `EVF_TERRAIN` (owned by S5) | `mbf_terrain` | `TERRAIN_MSG`: hump start/end + peak, impact | design 4 |
+| IF-12 | S4 imu → S5 scan | event flag state bit, writer imu only | `EVF_HUMP_ACTIVE` in `flg_sys` | ignore echoes on a hump (bounded by 400 mm) | design 8.3, F10 |
+| IF-13 | S5 scan → S5 ctrl | message buffer + `EVF_OBSTACLE` | `mbf_obstacle` | `OBSTACLE_MSG`: alert, profile + side, sensor fault, clearance lost | design 6.5 |
+| IF-14 | ECHO ISR → S5 scan | one aligned 32-bit word, ISR only writer + `tk_wup_tsk` | `us_echo_word` | 13-bit duration + valid + rose + sequence | design 10.4 rule 3 |
+| IF-15 | dashboard → S1 bridge → S3 line, S5 ctrl | 7-byte MQTT frame on `is11/car/cmd` (retained, QoS 1) → one aligned 32-bit word, writer `comms_bridge_on_command()` only | `app_barcode_map` (`app.h`) | letters for FORWARD, U-TURN, LEFT, RIGHT; ctrl stores each decoded letter and carries it out at the next cross-junction (`NAV_JUNCTION_CROSS`) | demo rule, 2 Nov |
 
 Each interface is tested by at least one integration test
 (`testing/integration/TEST_LOG.md`).
@@ -192,7 +199,7 @@ Each interface is tested by at least one integration test
 ## 6. Kernel object budget
 
 Limits are set in `config/config.h`. If the team needs more, raise the
-limit there. The numbers below are this version's usage.
+limit there. The numbers below are the example's usage.
 
 | Object | Limit | S1 | S2 | S3 | S4 | S5 |
 |---|---|---|---|---|---|---|
@@ -200,11 +207,12 @@ limit there. The numbers below are this version's usage.
 | Semaphore | 16 | | | | | |
 | Event flag | 16 | | | | | 1 |
 | Mailbox | 12 | | | | | |
-| Mutex | 12 | | | | |  |
-| Message buffer | 12 | 1 | 1 | | | 4 |
+| Mutex | 12 | | | | | 1 |
+| Message buffer | 12 | 2 | 1 | | | 5 |
 | Fixed memory pool | 12 | | | | | |
 | Variable memory pool | 12 | | | | | |
-| Cyclic handler | 12 | | 1 | 1 | 1 | 1 |
+| Cyclic handler | 12 | | 1 | 1 | 1 | |
 | Alarm handler | 12 | | | | | |
+| Interrupt handler | — | | | | | 1 (IRQ 13) |
 
 (The kernel's USB and WiFi service tasks also use a few of these.)
