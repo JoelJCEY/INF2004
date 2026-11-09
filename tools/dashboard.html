@@ -542,7 +542,7 @@ function parse(t,up){
     setIssue("selftest",{sev:"bad",title:"Self-test failed on the "+side.toUpperCase()+" wheel",
       what:"At start-up each wheel is driven forward alone and must count forward. "+why,
       detail:t,why:n<0?["Motor wires or encoder wires on that side are reversed compared with the code settings (MOTOR_L/R_INVERT, MOTION_ENC_L/R_INVERT)"]:["Battery switch off during the test","Encoder cable loose","Motor cable loose"],
-      fix:n<0?["Watch the "+side+" wheel at power-on: does it roll forward or backward?","Tell Claude which way it spins and the count"]:["Battery on, wheels off the ground or free to move","Check cables, then press RESET"],time:when});
+      fix:n<0?["Watch the "+side+" wheel at power-on: does it roll forward or backward?","Tell the team which way it spins and the count"]:["Battery on, wheels off the ground or free to move","Check cables, then press RESET"],time:when});
     setCheck("1selftest","bad","Wheel self-test: "+m[1]+" wheel "+n+" counts");}
   if(/self-check passed/.test(t)){clearIssue("selftest");setCheck("1selftest","ok","Wheel self-test: passed (both wheels count forward)");}
   if((m=/^line: calibration (OK|LOW CONTRAST)[^L]*L (\d+)-(\d+)\s+C (\d+)-(\d+)\s+R (\d+)-(\d+)/.exec(t))){
