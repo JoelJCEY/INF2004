@@ -1,44 +1,58 @@
 /*
  *	drv_servo.c
- *	Subsystem 5 -- servo PWM.  libbsp has no clock-divider call, so the
- *	slice's DIV register is written directly.
+ *	Subsystem 5 -- 50 Hz servo PWM.  125 MHz / 40 = 3.125 MHz,
+ *	62500 counts = 20 ms, so 1 µs = 3.125 counts.
  */
 
 #include "drv_servo.h"
 
-#define REG_ALIAS_CLR		0x3000U
-#define PWM_SLICE_OF(pin)	(((UINT)(pin) >> 1) & 0x07U)
-#define PWM_DIV(sl)		(PWM_BASE + PWM_CHx_DIV + ((sl) * 0x14U))
+#define SERVO_SLICE		6U
+#define SERVO_DIV_INT		40U
+#define SERVO_WRAP		62499U
+#define PWM_DIV_REG(s)		(PWM_BASE + ((s) * 0x14UL) + PWM_CHx_DIV)
 
-/* Same idempotent helper as subsystem 2 (kept local so this subsystem
-   builds and runs on its own).  The kernel leaves PWM in reset because
-   USE_PTMR is off. */
-LOCAL void s5_pwm_release_reset(void)
+EXPORT void drv_servo_init(void)
 {
-	if ((in_w(RESETS_RESET_DONE) & RESETS_RESET_PWM) == 0U) {
-		out_w(RESETS_RESET + REG_ALIAS_CLR, RESETS_RESET_PWM);
-		while ((in_w(RESETS_RESET_DONE) & RESETS_RESET_PWM) == 0U) {
-			;
-		}
+	app_unreset(RESETS_RESET_PWM);
+	pwm_set_pin(SERVO_PIN);
+	out_w(PWM_DIV_REG(SERVO_SLICE), SERVO_DIV_INT << 4);	/* 8.4 fixed point */
+	pwm_set_wrap(SERVO_PIN, SERVO_WRAP);
+	drv_servo_set_idx(SERVO_CENTRE_IDX);
+	pwm_set_enabled(SERVO_PIN, TRUE);
+}
+
+LOCAL INT	cur_deg = -1;	/* last angle written; -1 = not yet known */
+
+LOCAL void write_deg(UW deg)
+{
+	UW	us = SERVO_US_0DEG + ((deg * (SERVO_US_180DEG - SERVO_US_0DEG)) / 180U);
+
+	pwm_set_cc(SERVO_PIN, (us * 25U) / 8U);	/* x 3.125 */
+}
+
+EXPORT void drv_servo_set_idx(UINT idx)
+{
+	INT	target = (INT)SERVO_IDX_TO_DEG((idx > 24U) ? 24U : idx);
+	INT	step;
+
+	scan_status_word = (scan_status_word & ~0x1FUL) | (idx & 0x1FUL);
+
+	if (cur_deg < 0) {
+		/* first command after power-up: position unknown, set it */
+		write_deg((UW)target);
+		cur_deg = target;
+		return;
 	}
-}
-
-EXPORT ER servo_init(void)
-{
-	s5_pwm_release_reset();
-	(void)pwm_set_pin(S5_PIN_SERVO);
-	out_w(PWM_DIV(PWM_SLICE_OF(S5_PIN_SERVO)), SERVO_PWM_DIV_INT << 4);
-	(void)pwm_set_wrap(S5_PIN_SERVO, SERVO_PWM_WRAP);
-	servo_set_deg(90U);
-	(void)pwm_set_enabled(S5_PIN_SERVO, TRUE);
-	return E_OK;
-}
-
-EXPORT void servo_set_deg(UINT deg)
-{
-	UINT	d = (deg > 180U) ? 180U : deg;
-	UW	pulse_us = S5_SERVO_MIN_US +
-			   (((S5_SERVO_MAX_US - S5_SERVO_MIN_US) * (UW)d) / 180U);
-
-	(void)pwm_set_cc(S5_PIN_SERVO, pulse_us);	/* 1 count = 1 us */
+	/* ramp 1° at a time (SERVO_RAMP_xx), returns once there */
+	while (cur_deg != target) {
+		step = target - cur_deg;
+		if (step > SERVO_RAMP_DEG) {
+			step = SERVO_RAMP_DEG;
+		} else if (step < -SERVO_RAMP_DEG) {
+			step = -SERVO_RAMP_DEG;
+		}
+		cur_deg += step;
+		write_deg((UW)cur_deg);
+		(void)tk_dly_tsk(SERVO_RAMP_MS);
+	}
 }

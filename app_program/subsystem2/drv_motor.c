@@ -1,93 +1,69 @@
 /*
  *	drv_motor.c
- *	Subsystem 2 -- motor driver.  Robo Pico truth table per motor:
- *	    A = PWM, B = 0   forward
- *	    A = 0,   B = PWM reverse
- *	    A = 0,   B = 0   stop (check against the Robo Pico datasheet
- *	                      whether this brakes or coasts)
+ *	Subsystem 2 -- Robo Pico DC motor driver (PWM slices 4 and 5).
  */
 
 #include "drv_motor.h"
 
-/* Atomic "clear bits" alias of any RP2040 peripheral register */
-#define REG_ALIAS_CLR		0x3000U
+LOCAL const UB motor_pin_a[2] = { MOTOR_L_A_PIN, MOTOR_R_A_PIN };
+LOCAL const UB motor_pin_b[2] = { MOTOR_L_B_PIN, MOTOR_R_B_PIN };
+LOCAL const BOOL motor_invert[2] = { MOTOR_L_INVERT, MOTOR_R_INVERT };
 
-/*
- * The kernel only releases the PWM block from reset when it uses PWM as
- * its own timer (USE_PTMR, off in this template), so we do it here.
- * The atomic alias avoids a read-modify-write on the shared RESETS
- * register.  Safe to call more than once.
- */
-EXPORT void pwm_block_release_reset(void)
+EXPORT void drv_motor_init(void)
 {
-	if ((in_w(RESETS_RESET_DONE) & RESETS_RESET_PWM) == 0U) {
-		out_w(RESETS_RESET + REG_ALIAS_CLR, RESETS_RESET_PWM);
-		while ((in_w(RESETS_RESET_DONE) & RESETS_RESET_PWM) == 0U) {
-			;	/* takes a few clock cycles */
-		}
+	UINT	m;
+
+	app_unreset(RESETS_RESET_PWM);
+
+	for (m = 0; m < 2U; m++) {
+		/* Both channels of the slice: same wrap, start braked */
+		pwm_set_pin(motor_pin_a[m]);
+		pwm_set_pin(motor_pin_b[m]);
+		pwm_set_wrap(motor_pin_a[m], MOTOR_PWM_WRAP);
+		pwm_set_cc(motor_pin_a[m], 0);
+		pwm_set_cc(motor_pin_b[m], 0);
+		pwm_set_enabled(motor_pin_a[m], TRUE);
 	}
 }
 
-LOCAL void motor_pins_init(UINT pin_a, UINT pin_b)
+EXPORT void drv_motor_set(UINT motor, INT duty)
 {
-	(void)pwm_set_pin(pin_a);
-	(void)pwm_set_pin(pin_b);
-	(void)pwm_set_wrap(pin_a, MOTOR_PWM_WRAP);	/* one TOP per slice */
-	(void)pwm_set_cc(pin_a, 0U);
-	(void)pwm_set_cc(pin_b, 0U);
-	(void)pwm_set_enabled(pin_a, TRUE);		/* enables the slice */
-}
-
-EXPORT ER motor_init(void)
-{
-	pwm_block_release_reset();
-	motor_pins_init(S2_PIN_M1A, S2_PIN_M1B);
-	motor_pins_init(S2_PIN_M2A, S2_PIN_M2B);
-	return E_OK;
-}
-
-EXPORT void motor_set(S2_SIDE side, INT duty_permille)
-{
-	UINT	pin_a;
-	UINT	pin_b;
 	UW	cc;
-	INT	duty = duty_permille;
-	BOOL	invert;
+	INT	d;
 
-	if (side == S2_LEFT) {
-		pin_a = S2_PIN_M1A;
-		pin_b = S2_PIN_M1B;
-		invert = (S2_LEFT_INVERT != 0) ? TRUE : FALSE;
-	} else {
-		pin_a = S2_PIN_M2A;
-		pin_b = S2_PIN_M2B;
-		invert = (S2_RIGHT_INVERT != 0) ? TRUE : FALSE;
+	if (motor > 1U) {
+		return;
 	}
+	d = APP_CLAMP(duty, -MOTOR_DUTY_MAX, MOTOR_DUTY_MAX);
+	if (motor_invert[motor]) {
+		d = -d;
+	}
+	cc = ((UW)APP_ABS(d) * (MOTOR_PWM_WRAP + 1U)) / (UW)MOTOR_DUTY_MAX;
 
-	if (duty > MOTOR_DUTY_MAX) {
-		duty = MOTOR_DUTY_MAX;
-	} else if (duty < -MOTOR_DUTY_MAX) {
-		duty = -MOTOR_DUTY_MAX;
-	} else {
-		;	/* in range */
-	}
-	if (invert == TRUE) {
-		duty = -duty;
-	}
-
-	if (duty >= 0) {
-		cc = ((UW)duty * (MOTOR_PWM_WRAP + 1U)) / (UW)MOTOR_DUTY_MAX;
-		(void)pwm_set_cc(pin_b, 0U);
-		(void)pwm_set_cc(pin_a, cc);
-	} else {
-		cc = ((UW)(-duty) * (MOTOR_PWM_WRAP + 1U)) / (UW)MOTOR_DUTY_MAX;
-		(void)pwm_set_cc(pin_a, 0U);
-		(void)pwm_set_cc(pin_b, cc);
+	if (d > 0) {			/* forward: A = PWM, B = 0 */
+		pwm_set_cc(motor_pin_b[motor], 0);
+		pwm_set_cc(motor_pin_a[motor], cc);
+	} else if (d < 0) {		/* reverse: A = 0, B = PWM */
+		pwm_set_cc(motor_pin_a[motor], 0);
+		pwm_set_cc(motor_pin_b[motor], cc);
+	} else {			/* brake: A = B = 0 */
+		pwm_set_cc(motor_pin_a[motor], 0);
+		pwm_set_cc(motor_pin_b[motor], 0);
 	}
 }
 
-EXPORT void motor_stop_all(void)
+EXPORT void drv_motor_brake_all(void)
 {
-	motor_set(S2_LEFT, 0);
-	motor_set(S2_RIGHT, 0);
+	drv_motor_set(MOTOR_LEFT, 0);
+	drv_motor_set(MOTOR_RIGHT, 0);
+}
+
+EXPORT void drv_motor_coast_all(void)
+{
+	UINT	m;
+
+	for (m = 0; m < 2U; m++) {
+		pwm_set_cc(motor_pin_a[m], MOTOR_PWM_WRAP + 1U);
+		pwm_set_cc(motor_pin_b[m], MOTOR_PWM_WRAP + 1U);
+	}
 }

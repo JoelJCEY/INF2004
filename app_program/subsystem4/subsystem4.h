@@ -1,18 +1,10 @@
 /*
  *	subsystem4.h
- *	Subsystem 4 -- IMU terrain monitoring: humps and impacts (Buddy 4).
+ *	Subsystem 4 -- Terrain Monitoring (imu_task).
+ *	Buddy 4: 2501315 (Xavier).  Statechart 6.4, assumption A4.
  *
- *	BASIC VERSION.
- *	  - LSM303DLHC accelerometer at 100 Hz, +-8 g, over I2C0 (kernel
- *	    driver "iica", GP16/GP17).
- *	  - Tilt from the accelerometer (no gyroscope), level baseline taken
- *	    in the first second, light low-pass filter.
- *	  - Hump: LEVEL -> CLIMBING -> DESCENDING -> LEVEL; peak height
- *	    estimate = wheelbase x sin(max tilt).  A climb longer than 500 mm,
- *	    or a climb that goes level again without descending, is discarded.
- *	  - Impact: |a| far from 1 g (higher threshold on a hump).
- *	The complete version rebuilds the hump profile from encoder distance
- *	and ignores tilt while the car accelerates or brakes.
+ *	Owns: LSM303DLHC on I2C0 (GP16 SDA, GP17 SCL, 400 kHz), the only
+ *	device on that bus, so no bus mutex is needed.
  */
 
 #ifndef SUBSYSTEM4_H
@@ -20,35 +12,71 @@
 
 #include "../app.h"
 
-#define S4_PRI_IMU		14
-#define S4_PERIOD_MS		10	/* 100 Hz = sensor ODR */
-#define S4_PRINT_ENABLE		0	/* 1 = print tilt every 0.5 s */
+#define S4_PRI_IMU		APP_PRI_IMU
+#define S4_PERIOD_MS		20	/* 50 Hz (design 10-20 ms) */
 
-/* ---- Mounting and geometry: CHECK ON THE CAR (assumption A4) ------- */
-#define S4_FWD_AXIS		0	/* 0 = sensor X points forward, 1 = Y */
-#define S4_FWD_SIGN		1	/* -1 if tilting nose-up reads negative */
-#define S4_WHEELBASE_MM		150	/* front wheels to rear wheels/caster */
+#define IMU_SDA_PIN		16
+#define IMU_SCL_PIN		17
 
-/* Thresholds (provisional; set from the flat-track noise log, A4).
- * Tilt is handled as sin(tilt) x 1000: 70 ~ 4 degrees. */
-#define S4_SIN_ENTER		70
-#define S4_SIN_LEVEL		25
-#define S4_ENTER_N		3	/* samples above S4_SIN_ENTER */
-#define S4_LEVEL_N		20	/* 200 ms level = hump over */
-#define S4_CLIMB_MAX_MM		500	/* longer climb: ramp / bad reading */
-#define S4_BASELINE_N		100	/* 1 s at rest for the level baseline */
-#define S4_IMPACT_MG		2500	/* | |a| - 1 g | above this = impact */
-#define S4_IMPACT_HUMP_MG	3500	/* higher on a hump (landing) */
-#define S4_IMPACT_HOLDOFF_MS	1000
-#define S4_FAULT_READS		10	/* consecutive I2C errors = IMU fault */
+/* ---------------------------------------------------------------------
+ *  Motion-event enum (3 bits, agreed to pack, design 8.5 Version B)
+ * --------------------------------------------------------------------- */
+typedef enum {
+	ME_STATIONARY	= 0,
+	ME_CRUISING	= 1,
+	ME_ACCELERATING	= 2,	/* or braking */
+	ME_TURNING	= 3,
+	ME_CLIMBING	= 4,
+	ME_DESCENDING	= 5,
+	ME_IMPACT	= 6
+} MOTION_EVENT_CLASS;
 
-/* Read by tests and telemetry.  Written only by imu_task. */
-IMPORT volatile BOOL	s4_ok;		/* sensor found and configured */
-IMPORT volatile UW	s4_samples;
-IMPORT volatile W	s4_sin_x1000;	/* filtered tilt, nose-up positive */
-IMPORT volatile W	s4_peak_mm;	/* highest hump of the run */
-IMPORT volatile W	s4_last_mag_mg;
+/* ---------------------------------------------------------------------
+ *  IF-11  Terrain Status Queue (imu_task -> ctrl_task)
+ *  Message buffer mbf_terrain, owned by ctrl_task (subsystem5.h),
+ *  followed by tk_set_flg(flg_sys, EVF_TERRAIN).
+ * --------------------------------------------------------------------- */
+typedef enum {
+	TR_HUMP_START	= 1,	/* front wheels started climbing         */
+	TR_HUMP_END	= 2,	/* rear wheels crossed: peak_01mm valid  */
+	TR_IMPACT	= 3,	/* also sets FLT_IMPACT                  */
+	TR_HUMP_DISCARD	= 4	/* > 500 mm climb or false trigger       */
+} TERRAIN_KIND;
 
+typedef struct {
+	UB	kind;		/* TERRAIN_KIND            */
+	UB	event;		/* MOTION_EVENT_CLASS      */
+	UH	peak_01mm;	/* hump peak, 0.1 mm       */
+	UW	path_mm;	/* odometry when it happened */
+} TERRAIN_MSG;
+APP_STATIC_ASSERT(sizeof(TERRAIN_MSG) == 8, terrain_msg_size);
+
+/* ---------------------------------------------------------------------
+ *  IF-12  Hump bit: EVF_HUMP_ACTIVE in flg_sys (app.h).  imu_task is its
+ *  only writer (set on CLIMBING, cleared on report or discard);
+ *  scan_task reads it with tk_ref_flg() and ignores echoes meanwhile.
+ *
+ *  Status word for telemetry (writer imu_task only):
+ *    bits 0-2  MOTION_EVENT_CLASS     bits 3-6  humps reported (sat. 15)
+ *    bits 8-23 highest peak this run, 0.1 mm
+ * --------------------------------------------------------------------- */
+IMPORT volatile UW imu_status_word;
+
+/* Axis mapping: the X axis points forward, nose-up gives +X (validate
+   with sensor bench S4-B02; change the sign if the board is mounted the
+   other way round) */
+#define IMU_FWD_SIGN		1
+
+/* Latest raw readings (writer imu_task; sensor bench, diagnostics) */
+IMPORT volatile W  imu_acc_raw[3];	/* mg                     */
+IMPORT volatile W  imu_mag_raw[3];	/* raw LSB                */
+IMPORT volatile W  imu_base_mg[2];	/* level baseline x, y    */
+IMPORT volatile UW imu_reads_ok;
+IMPORT volatile UW imu_reads_fail;
+
+/* ---------------------------------------------------------------------
+ *  Private to subsystem 4
+ * --------------------------------------------------------------------- */
 IMPORT ID	tid_imu;
 IMPORT ID	cyc_imu;
 IMPORT void	imu_task(INT stacd, void *exinf);

@@ -65,6 +65,10 @@
 #define TCP_SND_BUF                 (8 * TCP_MSS)
 #define TCP_SND_QUEUELEN            ((4 * (TCP_SND_BUF) + (TCP_MSS - 1)) / (TCP_MSS))
 
+/* IS11: telemetry frames plus dashboard log lines (up to ~130 B each)
+   share the MQTT output ring; the 256 B default fits only one line. */
+#define MQTT_OUTPUT_RINGBUF_SIZE    2048
+
 #define LWIP_NETIF_STATUS_CALLBACK  1
 #define LWIP_NETIF_LINK_CALLBACK    1
 #define LWIP_NETIF_HOSTNAME         1
