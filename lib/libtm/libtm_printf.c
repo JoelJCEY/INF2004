@@ -30,6 +30,7 @@
 
 #if USE_TMONITOR
 #include "libtm.h"
+#include <stdarg.h>
 
 #if USE_TM_PRINTF
 #include <stdarg.h>
@@ -391,6 +392,36 @@ EXPORT INT	tm_sprintf( UB *str, const UB *format, ... )
 	return par.len;
 }
 
+/*
+ *	Bounded output to buffer (IS11 app_log: MQTT log topic)
+ *	par->cnt holds the capacity, par->len counts every character.
+ */
+LOCAL	void	out_bufn( UB *str, INT len, OutPar *par )
+{
+	while (--len >= 0) {
+		if (par->len < par->cnt) {
+			par->bufp[par->len] = *str;
+		}
+		par->len++;
+		str++;
+	}
+}
+
+EXPORT INT	tm_vsnprintf( UB *str, INT max, const UB *format, va_list ap )
+{
+	OutPar	par;
+
+	if (max <= 0) {
+		return 0;
+	}
+	par.len = 0;
+	par.cnt = (H)(max - 1);
+	par.bufp = str;
+	tm_vsprintf(out_bufn, &par, format, ap);
+	str[(par.len < par.cnt) ? par.len : par.cnt] = '\0';
+	return (par.len < par.cnt) ? par.len : par.cnt;
+}
+
 #else
 EXPORT INT	tm_printf( const UB *format, ... )
 {
@@ -400,6 +431,14 @@ EXPORT INT	tm_printf( const UB *format, ... )
 EXPORT INT	tm_sprintf( UB *str, const UB *format, ... )
 {
 	return (-1);
+}
+
+EXPORT INT	tm_vsnprintf( UB *str, INT max, const UB *format, va_list ap )
+{
+	if (max > 0) {
+		str[0] = '\0';
+	}
+	return 0;
 }
 
 #endif /* USE_TM_PRINTF */

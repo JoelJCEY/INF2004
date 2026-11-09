@@ -18,7 +18,12 @@
 /* Only used when built with MQTT=1 (also requires NET=lwip). */
 #define MQTT_BROKER_IP   "192.168.1.10"
 #define MQTT_BROKER_PORT 1883
-#define MQTT_CLIENT_ID   "mtk3smp-pico"
-#define MQTT_TOPIC       "mtk3smp-pico/heartbeat"
+#define MQTT_CLIENT_ID   "is11-car"
+#define MQTT_TOPIC       "is11/car/heartbeat"	/* unused by IS11 */
+
+/* IS11 topics (design 6.1 / subsystem1.h wire format v1) */
+#define MQTT_TOPIC_TLM    "is11/car/tlm"	/* binary telemetry, QoS 0  */
+#define MQTT_TOPIC_CMD    "is11/car/cmd"	/* START/STOP/RESET, QoS 1  */
+#define MQTT_TOPIC_STATUS "is11/car/status"	/* online / offline (LWT)   */
 
 #endif /* WIFI_SECRETS_H */

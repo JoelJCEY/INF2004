@@ -1,6 +1,7 @@
 /*
  *	subsystem3.c
- *	Subsystem 3 -- line sensing: 20 ms cyclic handler and line_task.
+ *	Subsystem 3 -- Line & Barcode Sensing: starts the ADC/DMA sampling,
+ *	creates its cyclic handler and starts line_task.
  */
 
 #include "subsystem3.h"
@@ -12,6 +13,8 @@ EXPORT ER subsystem3_init(void)
 {
 	T_CCYC	ccyc = {0};
 
+	/* The ADC and its DMA ring are started by line_task itself (its
+	   owning task), so ring index 0 is known to hold ADC0. */
 	ccyc.cycatr = TA_HLNG;
 	ccyc.cychdr = (FP)line_cyclic_handler;
 	ccyc.cyctim = S3_PERIOD_MS;
@@ -27,10 +30,4 @@ EXPORT ER subsystem3_start(void)
 		return tid_line;
 	}
 	return tk_sta_cyc(cyc_line);
-}
-
-EXPORT void line_cyclic_handler(void *exinf)
-{
-	(void)exinf;
-	(void)tk_wup_tsk(tid_line);
 }

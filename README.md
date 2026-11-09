@@ -1,4 +1,38 @@
-# micro T-Kernel 3.0 project for Raspberry Pi Pico W
+# IS11 Autonomous Robotic Car (INF2004)
+
+Firmware for the IS11 design (Week 6 Design Review + Tribunal 1, Versions A-C),
+built on the course template below.  Six tasks on micro T-Kernel 3.0:
+
+| Task | Folder | Owner | Priority |
+|---|---|---|---|
+| ctrl_task (Vehicle Controller) | `app_program/subsystem5/` | Buddy 5 (integration) | 10 |
+| motion_task | `app_program/subsystem2/` | Buddy 2 | 11 |
+| line_task | `app_program/subsystem3/` | Buddy 3 | 12 |
+| scan_task | `app_program/subsystem5/` | Buddy 5 | 13 |
+| imu_task | `app_program/subsystem4/` | Buddy 4 | 14 |
+| comms_task | `app_program/subsystem1/` | Buddy 1 | 20 |
+
+**Team build** (single core, Wi-Fi + MQTT):
+
+```sh
+cp config/wifi_secrets.example.h config/wifi_secrets.h   # then edit SSID, password, broker IP
+cd build_make
+make SMP=0 NET=lwip MQTT=1 -j8          # -> mtk3pico_smp0_usb_cdc_wifi_lwip_mqtt.uf2
+make SMP=0 NET=lwip MQTT=1 TEST=1 -j8   # same, with the on-target tests
+```
+
+Before the first run: wire against TEAM.md section 2, check the HC-SR04+ is on
+3.3 V, keep Grove 5 empty and the GP28 VBAT jumper open.  START = GP20 button
+or `python3 tools/is11_mqtt.py start --broker <ip>`; STOP = GP21 or `... stop`.
+`sh tools/host_test/run.sh` runs the logic tests and a motion simulation on a
+PC.  Barcode demo (map over MQTT, act at the cross-junction): see
+`testing/subsystem3/BARCODE_DEMO.md`.  Live dashboard: open `tools/dashboard.html`.  Every `#define` marked "design value" (wheel size, counts per revolution,
+IR thresholds, stop distance, impact threshold, wheelbase) must be replaced by
+the A2-A5 measurements.
+
+---
+
+## Template guide: micro T-Kernel 3.0 project for Raspberry Pi Pico W
 
 A starting point for your project: micro T-Kernel 3.0 running on **both cores**
 of the Pico W's RP2040, with a USB serial console and the WiFi driver built in.
@@ -256,6 +290,3 @@ They need the SDK's `lib/lwip` submodule and a `config/wifi_secrets.h`
 *micro T-Kernel 3.0 © Ken Sakamura / TRON Forum, distributed under the
 T-License 2.2. This dual-core RP2040 port is derived from the official
 μT-Kernel 3.0 BSP (`tron-forum/mtk3_bsp`, branch `pico_rp2040`).*
-
-# INF2004
-Embedded Project

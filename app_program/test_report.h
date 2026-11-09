@@ -21,6 +21,7 @@
 #define TEST_REPORT_H
 
 #include <tm/tmonitor.h>
+#include "app_log.h"	/* [TEST] lines also reach the dashboard log */
 
 #define TEST_INIT()	INT test_pass_ = 0, test_fail_ = 0
 
@@ -28,16 +29,16 @@
 	do {								\
 		if (cond) {						\
 			test_pass_++;					\
-			tm_printf((UB*)"[TEST] %s PASS  %s\n", (id), (desc)); \
+			app_log((UB*)"[TEST] %s PASS  %s\n", (id), (desc)); \
 		} else {						\
 			test_fail_++;					\
-			tm_printf((UB*)"[TEST] %s FAIL  %s   (%s:%d)\n",	\
+			app_log((UB*)"[TEST] %s FAIL  %s   (%s:%d)\n",	\
 				  (id), (desc), __FILE__, __LINE__);	\
 		}							\
 	} while (0)
 
 #define TEST_SUMMARY(name)						\
-	tm_printf((UB*)"[TEST] %s SUMMARY %d passed, %d failed\n",	\
+	app_log((UB*)"[TEST] %s SUMMARY %d passed, %d failed\n",	\
 		  (name), test_pass_, test_fail_)
 
 #endif /* TEST_REPORT_H */

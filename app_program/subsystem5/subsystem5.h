@@ -1,15 +1,13 @@
 /*
  *	subsystem5.h
- *	Subsystem 5 -- Obstacle scanning (scan_task) and the Vehicle
- *	Controller (ctrl_task, shared integration).  Buddy 5.
+ *	Subsystem 5 -- Obstacle Scanning (scan_task) and the shared Vehicle
+ *	Controller (ctrl_task).  Buddy 5: 2500118 (Marcus), integration lead.
+ *	Statechart 6.5, system statechart 5, fault table 5.1, assumption A5.
  *
- *	BASIC VERSION.  This header is the integration contract: the mission
- *	state, the ctrl_task event flag and every message that is sent TO
- *	ctrl_task.  ctrl_task owns (creates) all of these objects.
- *
- *	Rule (Section 4 of the design review): data travels in message
- *	buffers; event flag bits only say "something is waiting".  A sender
- *	always sends the message first and sets the flag bit second.
+ *	scan_task owns: HC-SR04+ (GP0 TRIG, GP1 ECHO + ECHO ISR, Grove 1,
+ *	3.3 V only) and the scan servo (GP12, PWM slice 6A, 50 Hz).
+ *	ctrl_task owns: START GP20, STOP GP21, NeoPixel GP18 (PIO), buzzer
+ *	GP22 (PWM slice 3A), the watchdog, and the mission state.
  */
 
 #ifndef SUBSYSTEM5_H
@@ -17,187 +15,165 @@
 
 #include "../app.h"
 
-/* ------------------------------------------------------------------ */
-/* Priorities (design order: ctrl > motion > line > scan > imu > comms).
- * 1-4 are the kernel's (USB console 3, Wi-Fi 4).  Agreed in TEAM.md.  */
-#define S5_PRI_CTRL		10
-#define S5_PRI_SCAN		13
-#define S5_PRINT_ENABLE		1	/* 0 = keep scan/ctrl debug quiet */
+#define S5_PRI_CTRL		APP_PRI_CTRL
+#define S5_PRI_SCAN		APP_PRI_SCAN
+#define S5_CTRL_TICK_MS		50	/* regular check + button poll */
+#define S5_SCAN_PERIOD_MS	60	/* ping interval while watching */
 
-/* ------------------------------------------------------------------ */
-/* Vehicle (mission) state, Section 5.  POWER OFF is not a firmware
- * state.  Stored in 4 bits in the complete version; a plain enum here. */
-typedef enum {
-	VS_INITIALISING = 0,
-	VS_READY,
-	VS_LINE_FOLLOWING,
-	VS_BARCODE_MANOEUVRE,
-	VS_HUMP_CROSSING,
-	VS_OBSTACLE_BYPASS,	/* basic: stop and wait until the path clears */
-	VS_MISSION_COMPLETE,
-	VS_STOPPED,
-	VS_FAULT_STOP,
-	VS_LINE_RECOVERY,	/* used by the complete version only */
-	VS_NUM_STATES
-} VEHICLE_STATE;
+/* 1 = obstacle detection and bypass active.  0 = scan_task never raises
+   an alert (bring-up: line following tests while the ultrasonic is not
+   yet on its servo).  Set back to 1 for obstacle tests. */
+#define SCAN_ENABLE		1
 
-/* Read from any task; written only by ctrl_task (one aligned word). */
-IMPORT volatile VEHICLE_STATE	s5_vehicle_state;
-IMPORT const char * const	s5_state_name[VS_NUM_STATES];
+#define US_TRIG_PIN		0	/* Grove 1: unplug for CRASH_REPORT=1 */
+#define US_ECHO_PIN		1
+#define SERVO_PIN		12
+#define BTN_START_PIN		20
+#define BTN_STOP_PIN		21
+#define NEOPIXEL_PIN		18
+#define BUZZER_PIN		22
 
-/* ------------------------------------------------------------------ */
-/* ctrl_task event flag (owned by ctrl_task).                          */
-IMPORT ID	flg_ctrl;
+/* ---------------------------------------------------------------------
+ *  Kernel objects owned by ctrl_task (it receives on all of them)
+ * --------------------------------------------------------------------- */
+IMPORT ID	flg_sys;		/* System Event Group (app.h EVF_/FLT_) */
+IMPORT ID	mtx_mission;		/* mission state, TA_INHERIT (F5)       */
+IMPORT ID	mbf_nav;		/* IF-09 line_task   -> ctrl_task       */
+IMPORT ID	mbf_terrain;		/* IF-11 imu_task    -> ctrl_task       */
+IMPORT ID	mbf_obstacle;		/* IF-13 scan_task   -> ctrl_task       */
+IMPORT ID	mbf_motion_status;	/* IF-06 motion_task -> ctrl_task       */
+IMPORT ID	mbf_remote;		/* IF-03 comms       -> ctrl_task       */
 
-#define FLG_NAV			(1U << 0)	/* message on mbf_nav        */
-#define FLG_TERRAIN		(1U << 1)	/* message on mbf_terrain    */
-#define FLG_OBSTACLE		(1U << 2)	/* message on mbf_obstacle   */
-#define FLG_MOTION		(1U << 3)	/* message on mbf_motion_st  */
-#define FLG_EVENTS_ALL		(FLG_NAV | FLG_TERRAIN | FLG_OBSTACLE | FLG_MOTION)
+#define S5_QUEUE_MSGS		8	/* depth of every queue above */
 
-/* State bit, set and cleared by imu_task only (never by ctrl_task).
- * scan_task ignores readings while it is set (it may see the hump).   */
-#define FLG_HUMP_ACTIVE		(1U << 8)
+/* Report a fault from any task: sets its bit in the event flag. */
+Inline void app_report_fault(UINT flt)
+{
+	(void)tk_set_flg(flg_sys, flt & FLT_ALL);
+}
 
-/* ------------------------------------------------------------------ */
-/* Barcode command (FR2).  The letter-to-command table is in
- * subsystem3/barcode.c and is still to be confirmed with staff.       */
-typedef enum {
-	BC_NONE = 0,
-	BC_TURN_LEFT,
-	BC_TURN_RIGHT,
-	BC_STRAIGHT,
-	BC_U_TURN,
-	BC_UNRECOGNISED,
-	BC_END_OF_COURSE	/* reserved: only if staff confirm a marker */
-} BARCODE_CMD;
-
-/* Navigation Command Queue: line_task -> ctrl_task */
-typedef enum {
-	NAV_BARCODE = 0,	/* value = BARCODE_CMD, letter = decoded char */
-	NAV_LINE_LOST,
-	NAV_LINE_FOUND
-} NAV_KIND;
-
+/* ---------------------------------------------------------------------
+ *  IF-04  Mission state (ctrl_task writes, others read a copy).
+ *  Protected by mtx_mission (TA_INHERIT); the critical section is a
+ *  struct copy only.  comms_task never takes this mutex (NFR3).
+ * --------------------------------------------------------------------- */
 typedef struct {
-	NAV_KIND	kind;
-	BARCODE_CMD	cmd;
-	UB		letter;		/* decoded Code 39 character   */
-	W		distance_mm;	/* odometer when it happened   */
-} NAV_MSG;
-IMPORT ID	mbf_nav;
+	UB	state;		/* VEHICLE_STATE (4 bits used)       */
+	UB	fault_mask;	/* latched FLT_xxx                   */
+	UB	bypass_fails;	/* failed bypass attempts (0..2)     */
+	UB	bypass_side;	/* OBS_SIDE_xxx while bypassing      */
+} MISSION_STATE;
+APP_STATIC_ASSERT(sizeof(MISSION_STATE) == 4, mission_state_size);
 
-/* Terrain Status Queue: imu_task -> ctrl_task */
+IMPORT void ctrl_get_mission(MISSION_STATE *out);
+
+/* Sensor bench (TEST builds): while scan_bench_on != 0 and the car is
+   not moving, scan_task pings straight ahead every ~70 ms and publishes
+   (US_RESULT << 16) | mm in scan_bench_word, then increments
+   scan_bench_seq. */
+/* Last full sweep (mm per servo position 30..150 deg in 5 deg steps,
+   0 = not measured, 1000 = nothing within ~1 m) and a count that
+   changes after each sweep.  Dashboard only. */
+IMPORT volatile UH scan_last_sweep[25];
+IMPORT volatile UW scan_sweep_seq;
+IMPORT volatile UW scan_bench_on;
+/* 1 = scan_task does nothing (ultrasonic diagnostic owns GP0/GP1) */
+IMPORT volatile UW scan_hold;
+IMPORT volatile UW scan_bench_word;
+IMPORT volatile UW scan_bench_seq;
+
+/* ---------------------------------------------------------------------
+ *  IF-13  Obstacle Profile Queue (scan_task -> ctrl_task)
+ * --------------------------------------------------------------------- */
 typedef enum {
-	TER_HUMP_START = 0,
-	TER_HUMP_END,		/* value = peak height estimate, mm */
-	TER_HUMP_DISCARDED,	/* climb too long: ramp or bad reading */
-	TER_IMPACT,		/* value = |a| deviation, mg */
-	TER_IMU_FAULT
-} TERRAIN_KIND;
-
-typedef struct {
-	TERRAIN_KIND	kind;
-	W		value;
-} TERRAIN_MSG;
-IMPORT ID	mbf_terrain;
-
-/* Obstacle Profile Queue: scan_task -> ctrl_task */
-typedef enum {
-	OBS_ALERT = 0,		/* two readings inside the stop distance */
-	OBS_CLEAR,		/* path ahead clear again               */
-	OBS_SENSOR_FAULT	/* ECHO never rose, 3 times in a row     */
+	OB_ALERT		= 1,	/* 2 readings inside the stop distance  */
+	OB_PROFILE		= 2,	/* sweep finished: fields valid         */
+	OB_SENSOR_FAULT		= 3,	/* 3 x no echo: a failed attempt        */
+	OB_CLEARANCE_LOST	= 4,	/* side guard tripped during a bypass   */
+	OB_NO_CLEARANCE		= 5	/* profile: neither side is wide enough */
 } OBSTACLE_KIND;
 
+#define OBS_SIDE_NONE		0U
+#define OBS_SIDE_LEFT		1U
+#define OBS_SIDE_RIGHT		2U
+
 typedef struct {
-	OBSTACLE_KIND	kind;
-	W		distance_mm;
+	UB	kind;		/* OBSTACLE_KIND                         */
+	UB	side;		/* recommended bypass side               */
+	UB	servo_idx;	/* 0..24 = 30°..150° in 5° steps         */
+	UB	reserved;
+	UH	width_mm;	/* obstacle width                        */
+	UH	closest_mm;	/* closest reading                       */
+	UH	offset_mm;	/* lateral distance to clear on that side*/
+	UH	depth_mm;	/* estimated length to drive past it     */
 } OBSTACLE_MSG;
-IMPORT ID	mbf_obstacle;
+APP_STATIC_ASSERT(sizeof(OBSTACLE_MSG) == 12, obstacle_msg_size);
 
-/* Motion Status Queue: motion_task -> ctrl_task */
-typedef enum {
-	MST_DONE = 0,		/* the last move/turn finished           */
-	MST_STALL		/* stall detected: motors locked off     */
-} MOTION_STATUS_KIND;
-
+/* ---------------------------------------------------------------------
+ *  IF-03  Remote Command Queue (comms -> ctrl_task)
+ * --------------------------------------------------------------------- */
 typedef struct {
-	MOTION_STATUS_KIND	kind;
-	W			distance_mm;
-} MOTION_STATUS_MSG;
-IMPORT ID	mbf_motion_st;
+	UB	cmd;		/* REMOTE_CMD (2 bits used) */
+	UB	seq;		/* sender's sequence number */
+	UH	reserved;
+} REMOTE_MSG;
+APP_STATIC_ASSERT(sizeof(REMOTE_MSG) == 4, remote_msg_size);
 
-/* Helper for producers: send, then raise the flag bit. */
-IMPORT ER	s5_post(ID mbf, const void *msg, INT size, UINT flag_bit);
+/* ---------------------------------------------------------------------
+ *  ECHO ISR result word (design 10.3 / 10.4 rule 3).  us_echo_isr is its
+ *  ONLY writer; scan_task only reads.  One aligned 32-bit store:
+ *    bits 0-12  echo duration µs (saturates at 8191)
+ *    bit  13    VALID: falling edge seen, duration complete
+ *    bit  14    ROSE:  rising edge seen for this ping
+ *    bits 16-31 ping sequence (incremented on every rising edge)
+ * --------------------------------------------------------------------- */
+#define ECHO_DUR_MASK		0x1FFFU
+#define ECHO_VALID		(1UL << 13)
+#define ECHO_ROSE		(1UL << 14)
+#define ECHO_SEQ_SHIFT		16
+#define ECHO_TIMEOUT_US		6000U	/* ~1 m of range (C1) */
 
-/* Milliseconds since boot (kernel operating time, wraps after 49 days). */
-IMPORT UW	s5_now_ms(void);
+IMPORT volatile UW us_echo_word;
 
-/* ------------------------------------------------------------------ */
-/* Fault mask (Section 5.1).  Latched by ctrl_task until RESET. */
-#define FAULT_STALL		(1U << 0)
-#define FAULT_ENCODER		(1U << 1)
-#define FAULT_IMU		(1U << 2)
-#define FAULT_FAILED_BYPASS	(1U << 3)
-#define FAULT_IMPACT		(1U << 4)
-#define FAULT_LINE_LOST		(1U << 5)
-#define FAULT_NO_ECHO		(1U << 6)
-#define FAULT_WIFI_LOSS		(1U << 7)
+/* Scan status for telemetry (writer scan_task only):
+     bits 0-4 servo index, bits 5-7 scan state, bits 16-28 last mm */
+IMPORT volatile UW scan_status_word;
 
-IMPORT volatile UW	s5_fault_mask;	/* written only by ctrl_task */
+/* Rescan request (ctrl_task -> scan_task, writer ctrl_task only): each
+   increment asks for one more full sweep during OBSTACLE BYPASS, after
+   the car has reversed (6.5: "reverses a short distance and rescans"). */
+IMPORT volatile UW scan_rescan_request;
+/* 31 Oct: watch the obstacle's side while passing it (bypass "pass" leg).
+   scan_pass_watch:  written by ctrl_task.  0 = off, else servo index + 1
+                     to look at while driving the pass leg.
+   scan_pass_seq:    written by scan_task, +1 when the obstacle is behind.
+   scan_pass_extra_mm: written by scan_task before scan_pass_seq: how much
+                     farther to drive from that moment. */
+/* Pass leg look angle (4 Nov): bypass on the LEFT = obstacle on the
+   car's RIGHT, so look right.  The servo cannot go past 70 deg on the
+   right (at 60 it hit the car), so that side looks only 20 deg right of
+   ahead and sees the obstacle's side further ahead; task_scan judges
+   "beside it" by sideways distance, which works for any angle. */
+#define SCAN_PASS_LOOK_RIGHT_DEG 70	/* bypass on the left  */
+#define SCAN_PASS_LOOK_LEFT_DEG	135	/* bypass on the right */
+#define SCAN_DEG_TO_IDX(d)	(((d) - 30) / 5)
+IMPORT volatile UW scan_pass_watch;
+IMPORT volatile UW scan_pass_seq;
+IMPORT volatile UW scan_pass_extra_mm;
 
-/* ------------------------------------------------------------------ */
-/* Ultrasonic + servo (scan_task) */
-#define S5_PIN_TRIG		6	/* Grove 5 (its GP26 wire unused) */
-#define S5_PIN_ECHO		7	/* Grove 7, HC-SR04+ 3.3 V only */
-#define S5_PIN_SERVO		12	/* servo port 1, PWM slice 6A */
-#define S5_PIN_BTN_START	20	/* on-board, pressed = 0 */
-#define S5_PIN_BTN_STOP		21	/* on-board, pressed = 0 */
+/* Servo index <-> angle: 30°..150° in 5° steps (5 bits, design 10.3) */
+#define SERVO_MIN_DEG		30
+#define SERVO_MAX_DEG		150
+#define SERVO_STEP_DEG		5
+#define SERVO_CENTRE_IDX	12	/* 90°: straight ahead */
+#define SERVO_IDX_TO_DEG(i)	(SERVO_MIN_DEG + ((INT)(i) * SERVO_STEP_DEG))
 
-#define S5_TRIG_PULSE_US	10U
-#define S5_RISE_TMO_US		3000U	/* ECHO must rise within this */
-#define S5_ECHO_TMO_US		6000U	/* ~1 m; longer = nothing in range */
-#define S5_SCAN_PERIOD_MS	60
-#define S5_STOP_MM		200	/* provisional: set from braking test */
-#define S5_CLEAR_MM		300	/* path counts as clear above this */
-#define S5_CONFIRM_N		2	/* readings inside stop distance */
-#define S5_CLEAR_N		3
-#define S5_NO_ECHO_FAULT_N	3
-#define S5_SERVO_MIN_US		500U	/* calibrate: pulse for 0 deg */
-#define S5_SERVO_MAX_US		2500U	/* calibrate: pulse for 180 deg */
-
-typedef enum {
-	S5_PING_OK = 0,
-	S5_PING_OUT_OF_RANGE,	/* nothing within ~1 m: normal */
-	S5_PING_NO_ECHO,	/* ECHO never rose: fault */
-	S5_PING_BUSY
-} S5_PING_RESULT;
-
-/* Read by the tests and by ctrl_task for telemetry. Written by scan_task. */
-IMPORT volatile BOOL	s5_scan_ready;
-IMPORT volatile W	s5_last_mm;	/* -1 = nothing in range */
-IMPORT volatile UW	s5_ping_count;
-
-/* ctrl_task settings */
-#define S5_CTRL_TICK_MS		50	/* regular check + button poll */
-#define S5_TELEMETRY_EVERY	4	/* 4 x 50 ms = 200 ms (5 Hz) */
-#define S5_INIT_WAIT_MS		3000	/* subsystems must be ready by then */
-#define S5_REQUIRE_IMU		1	/* 0 = drive without the IMU (bench) */
-#define S5_RESET_HOLD_MS	1000	/* hold both buttons = RESET */
-#define S5_CRUISE_MM_S		300	/* provisional cruise speed (A3) */
-#define S5_HUMP_MM_S		150	/* speed limit while on a hump */
-
-/* Barcode execution (course rules still to be confirmed with staff):
- * after a decode, keep following for EXEC_DELAY_MM, drive EXEC_FWD_MM
- * so the wheels are over the junction, then turn. */
-#define S5_EXEC_DELAY_MM	100
-#define S5_EXEC_FWD_MM		60
-
+/* ---------------------------------------------------------------------
+ *  Private to subsystem 5
+ * --------------------------------------------------------------------- */
 IMPORT ID	tid_ctrl;
 IMPORT ID	tid_scan;
-IMPORT ID	cyc_scan;
 IMPORT void	ctrl_task(INT stacd, void *exinf);
 IMPORT void	scan_task(INT stacd, void *exinf);
-IMPORT void	scan_cyclic_handler(void *exinf);
 
 #endif /* SUBSYSTEM5_H */
