@@ -58,7 +58,7 @@ fixed.
 | GP4 | S2 motion_task | right encoder A (Grove 3, PIO) |
 | GP5 | S2 motion_task | right encoder B (Grove 3, PIO) |
 | GP6 | | spare (Grove 5 must stay EMPTY: it shares GP26) |
-| GP7 | | spare (loose wire on the Grove 7 cable, insulated) |
+| GP7 | S3 line_task | IR centre sensor, digital DO input, pull-up (`IR_C_DIGITAL 1`, `IR_C_DO_PIN 7`, since 28 Oct) |
 | GP8 | S2 motion_task | M1A left motor, PWM 4A |
 | GP9 | S2 motion_task | M1B left motor, PWM 4B |
 | GP10 | S2 motion_task | M2A right motor, PWM 5A |
@@ -74,9 +74,9 @@ fixed.
 | GP20 | S5 ctrl_task | START button (on board) |
 | GP21 | S5 ctrl_task | STOP button (on board) |
 | GP22 | S5 ctrl_task | piezo buzzer, PWM 3A |
-| GP26 | S3 line_task | IR_L, ADC0 (Grove 6) |
-| GP27 | S3 line_task | IR_C, ADC1 (Grove 6) |
-| GP28 | S3 line_task | IR_R, ADC2 (Grove 7, VBAT-sense jumper OPEN) |
+| GP26 | S3 line_task | IR left sensor, ADC0 (Grove 6): barcode only |
+| GP27 | S3 line_task | IR right sensor, ADC1 (Grove 6): centre/right swapped in code (`IR_SWAP_C_R 1`) |
+| GP28 | S3 line_task | ADC2 (Grove 7, VBAT-sense jumper OPEN): sampled but not used for steering (centre reads GP7) |
 
 ## 3. Peripherals
 
