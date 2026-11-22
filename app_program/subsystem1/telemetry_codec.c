@@ -30,7 +30,8 @@ EXPORT INT comms_encode_tlm(const TLM_SNAPSHOT *s, UB seq, UB *buf)
 	put32(&buf[2], s->status);
 	buf[6] = s->fault_mask;
 	buf[7] = s->letter;
-	put16(&buf[8], (UW)(UH)s->speed_l_mm_s);	/* two's complement i16 */
+	/* two's complement i16 */
+	put16(&buf[8], (UW)(UH)s->speed_l_mm_s);
 	put16(&buf[10], (UW)(UH)s->speed_r_mm_s);
 	put32(&buf[12], (UW)s->enc_l);
 	put32(&buf[16], (UW)s->enc_r);
@@ -96,6 +97,6 @@ EXPORT ER comms_decode_map(const UB *buf, INT len, UW *map)
 			}
 		}
 	}
-	*map = APP_BARCODE_MAP(buf[3], buf[4], buf[5], buf[6]);
+	*map = app_barcode_map_pack(buf[3], buf[4], buf[5], buf[6]);
 	return E_OK;
 }

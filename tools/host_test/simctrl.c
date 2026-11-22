@@ -22,7 +22,7 @@ static void check_uturn(VEHICLE_STATE initial)
     NAV_MSG junction = {.kind=NAV_JUNCTION_CROSS, .path_mm=100};
     MOTION_STATUS status = {.event=MS_DONE};
     mission.state=initial; pending_letter=0; sent=0;
-    app_barcode_map=APP_BARCODE_MAP('F','A','L','R');
+    app_barcode_map=app_barcode_map_pack('F','A','L','R');
     motion_odo_path_01mm=(100+CTRL_SENSOR_AHEAD_MM)*10;
     on_nav(&barcode);
     assert(pending_letter=='A' && sent==0);

@@ -30,7 +30,8 @@ int32_t drv_ir_adc_init(void)
 		gpio_disable_pulls(pin);
 		gpio_set_input_enabled(pin, false);
 		if (pin == IR_DO_PULLUP_PIN) {
-			gpio_pull_up(pin);	/* DO output: see drv_ir_adc.h */
+			/* DO output: see drv_ir_adc.h */
+			gpio_pull_up(pin);
 		}
 	}
 
@@ -77,7 +78,8 @@ uint32_t drv_ir_adc_write_index(void)
 		return 0U;
 	}
 	wa = dma_hw->ch[ir_dma].write_addr;
-	return ((wa - (uint32_t)ir_ring) / sizeof(uint16_t)) & (IR_ADC_RING_SAMPLES - 1U);
+	return ((wa - (uint32_t)ir_ring) / sizeof(uint16_t)) &
+	       (IR_ADC_RING_SAMPLES - 1U);
 }
 
 uint32_t drv_ir_adc_samples_written(void)
@@ -95,8 +97,10 @@ const volatile uint16_t *drv_ir_adc_ring(void)
 
 uint32_t drv_ir_adc_take_errors(void)
 {
-	uint32_t	f = adc_hw->fcs & (ADC_FCS_OVER_BITS | ADC_FCS_UNDER_BITS);
+	uint32_t	f = adc_hw->fcs & (ADC_FCS_OVER_BITS
+		| ADC_FCS_UNDER_BITS);
 
-	adc_hw->fcs = (adc_hw->fcs & ~(ADC_FCS_OVER_BITS | ADC_FCS_UNDER_BITS)) | f;
+	adc_hw->fcs = (adc_hw->fcs & ~(ADC_FCS_OVER_BITS
+		| ADC_FCS_UNDER_BITS)) | f;
 	return f;
 }

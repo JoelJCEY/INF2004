@@ -26,7 +26,8 @@ LOCAL void build_symbol(UH pat_mid, UW *w)
 
 	for (k = 0; k < 3; k++) {
 		for (i = 8; i >= 0; i--) {
-			w[n++] = ((pats[k] >> i) & 1U) ? WIDE_UM : NARROW_UM;
+			w[n++] = (((UW)pats[k] >> (UINT)i) & 1U)
+				? WIDE_UM : NARROW_UM;
 		}
 		if (k < 2) {
 			w[n++] = NARROW_UM;	/* inter-character gap */
@@ -114,24 +115,35 @@ LOCAL BC_RESULT wiggle_read(UW every_um, UW back_um, UB *letter, INT *bars)
 		BOOL	black = FALSE;
 
 		if ((every_um != 0U) && ((pos - mark) >= (W)every_um)) {
-			for (k = 0; k < (back_um / 300U); k++) {	/* swing back */
+			/* swing back */
+			for (k = 0; k < (back_um / 300U); k++) {
 				pos -= 300;
 				black = FALSE;
 				for (i = 0; i < CODE39_ELEMENTS; i += 2) {
-					if ((pos >= edge[i]) && (pos < edge[i + 1])) black = TRUE;
+					if ((pos >= edge[i]) &&
+						(pos < edge[i + 1])) {
+						black = TRUE;
+					}
 				}
-				x = bc_reader_feed(&r, black ? 1000 : 0, -300, letter, &reason);
-				if (x != BCR_NONE) res = x;
+				x = bc_reader_feed(&r, black ? 1000 : 0, -300,
+					letter, &reason);
+				if (x != BCR_NONE) {
+					res = x;
+				}
 			}
 			mark = pos + (W)back_um;
 		}
 		pos += step;
 		black = FALSE;
 		for (i = 0; i < CODE39_ELEMENTS; i += 2) {
-			if ((pos >= edge[i]) && (pos < edge[i + 1])) black = TRUE;
+			if ((pos >= edge[i]) && (pos < edge[i + 1])) {
+				black = TRUE;
+			}
 		}
 		x = bc_reader_feed(&r, black ? 1000 : 0, step, letter, &reason);
-		if (x != BCR_NONE) res = x;
+		if (x != BCR_NONE) {
+			res = x;
+		}
 	}
 	*bars = (INT)r.bars;
 	return res;
@@ -163,89 +175,96 @@ LOCAL UB ao_read(UH pat, BOOL backwards, W spot_um, INT peak)
 	}
 	edge[0] = 30000;
 	for (i = 0; i < CODE39_ELEMENTS; i++) {
-		edge[i + 1] = edge[i] + (W)w[backwards ? (CODE39_ELEMENTS - 1 - i) : i];
+		edge[i + 1] = edge[i]
+			+ (W)w[backwards ? (CODE39_ELEMENTS - 1 - i) : i];
 	}
 	end = edge[CODE39_ELEMENTS] + 40000;
 	bc_reader_reset(&r);
 	for (pos = 0; pos < end; pos += 300) {
 		INT	blk = 0, n;
 
-		for (j = 0; j < 9; j++) {		/* spot: 9 points across */
+		/* spot: 9 points across */
+		for (j = 0; j < 9; j++) {
 			W x = pos - (spot_um / 2) + ((spot_um * j) / 8);
 			for (i = 0; i < CODE39_ELEMENTS; i += 2) {
-				if ((x >= edge[i]) && (x < edge[i + 1])) blk++;
+				if ((x >= edge[i]) && (x < edge[i + 1])) {
+					blk++;
+				}
 			}
 		}
 		n = ((blk * peak) / 9) + ao_noise(40);
-		n = APP_CLAMP(n, 0, 1000);
-		if (bc_reader_feed(&r, n, 300, &letter, &reason) == BCR_BARCODE) {
+		n = app_clamp(n, 0, 1000);
+		if (bc_reader_feed(&r, n, 300, &letter,
+			&reason) == BCR_BARCODE) {
 			got = letter;
 		}
 	}
 	return got;
 }
 
-EXPORT void subsystem3_test(void)
+/* S3-S01..S08: line tracking rule (line_track_step) */
+LOCAL void s3_test_track(void)
 {
-	UW		w[CODE39_ELEMENTS];
-	UW		rev[CODE39_ELEMENTS];
-	UB		letter = 0;
-	INT		i, reason = 0;
-	BOOL		on_line;
-	BC_READER	r;
-	BC_RESULT	res;
-	UW		wr1, wr2;
-	UW		map;
+	BOOL	on_line;
 
-	TEST_INIT();
-	{
-		LINE_TRACK t = {0};
-		INT weak, strong;
-		(void)line_track_step(&t, 1000, 0, &on_line);
-		(void)line_track_step(&t, 1000, 0, &on_line);
-		TEST_CHECK("S3-S01", on_line && t.centre,
-			   "stable centre acquires the line");
-		(void)line_track_step(&t, 0, 0, &on_line);
-		TEST_CHECK("S3-S02", on_line && t.centre,
-			   "one white DO glitch does not lose the line");
-		(void)line_track_step(&t, 1000, 0, &on_line);
-		(void)line_track_step(&t, 0, 0, &on_line);
-		(void)line_track_step(&t, 0, 0, &on_line);
-		TEST_CHECK("S3-S03", !on_line && !t.centre,
-			   "sustained loss is still detected");
-		weak = line_track_step(&t, 0, 420, &on_line);
-		strong = line_track_step(&t, 0, 1000, &on_line);
-		TEST_CHECK("S3-S04", weak < 0 && strong < weak && strong == -600,
-			   "right AO ramps steering in the correct direction");
-		(void)line_track_step(&t, 0, 330, &on_line);
-		TEST_CHECK("S3-S05", on_line && t.right,
-			   "right AO hysteresis rejects threshold chatter");
-		(void)line_track_step(&t, 0, 200, &on_line);
-		TEST_CHECK("S3-S06", !on_line && !t.right,
-			   "right AO releases below the white threshold");
-		(void)line_track_step(&t, 1000, 0, &on_line);
-		(void)line_track_step(&t, 1000, 0, &on_line);
-		weak = line_track_step(&t, 1000, 650, &on_line);
-		TEST_CHECK("S3-S07", on_line && weak < 0 && weak >= -200,
-			   "centre+right overlap starts a gentle right curve");
-		(void)line_track_step(&t, 0, 650, &on_line);
-		strong = line_track_step(&t, 0, 650, &on_line);
-		TEST_CHECK("S3-S08", on_line && strong < weak,
-			   "right curve correction strengthens when centre leaves");
-	}
+	LINE_TRACK t = {0};
+	INT weak, strong;
+	(void)line_track_step(&t, 1000, 0, &on_line);
+	(void)line_track_step(&t, 1000, 0, &on_line);
+	TEST_CHECK("S3-S01", on_line && t.centre,
+		   "stable centre acquires the line");
+	(void)line_track_step(&t, 0, 0, &on_line);
+	TEST_CHECK("S3-S02", on_line && t.centre,
+		   "one white DO glitch does not lose the line");
+	(void)line_track_step(&t, 1000, 0, &on_line);
+	(void)line_track_step(&t, 0, 0, &on_line);
+	(void)line_track_step(&t, 0, 0, &on_line);
+	TEST_CHECK("S3-S03", !on_line && !t.centre,
+		   "sustained loss is still detected");
+	weak = line_track_step(&t, 0, 420, &on_line);
+	strong = line_track_step(&t, 0, 1000, &on_line);
+	TEST_CHECK("S3-S04", weak < 0 && strong < weak && strong == -600,
+		   "right AO ramps steering in the correct direction");
+	(void)line_track_step(&t, 0, 330, &on_line);
+	TEST_CHECK("S3-S05", on_line && t.right,
+		   "right AO hysteresis rejects threshold chatter");
+	(void)line_track_step(&t, 0, 200, &on_line);
+	TEST_CHECK("S3-S06", !on_line && !t.right,
+		   "right AO releases below the white threshold");
+	(void)line_track_step(&t, 1000, 0, &on_line);
+	(void)line_track_step(&t, 1000, 0, &on_line);
+	weak = line_track_step(&t, 1000, 650, &on_line);
+	TEST_CHECK("S3-S07", on_line && weak < 0 && weak >= -200,
+		   "centre+right overlap starts a gentle right curve");
+	(void)line_track_step(&t, 0, 650, &on_line);
+	strong = line_track_step(&t, 0, 650, &on_line);
+	TEST_CHECK("S3-S08", on_line && strong < weak,
+		   "right curve correction strengthens when centre leaves");
+}
+
+/* S3-U01..U04, U09: Code 39 decoding and the barcode map */
+LOCAL void s3_test_decode(void)
+{
+	UW	w[CODE39_ELEMENTS];
+	UW	rev[CODE39_ELEMENTS];
+	UB	letter = 0;
+	INT	i;
+	UW	map;
 
 	/* S3-U01: '*A*' decodes forwards */
 	build_symbol(0x109, w);
-	TEST_CHECK("S3-U01", (code39_decode(w, CODE39_ELEMENTS, &letter) == C39_OK)
-		   && (letter == 'A'), "Code 39 '*A*' forwards");
+	TEST_CHECK("S3-U01",
+		(code39_decode(w, CODE39_ELEMENTS, &letter) == C39_OK) &&
+		   (letter == 'A'), "Code 39 '*A*' forwards");
 
 	/* S3-U02: the same symbol read backwards (U-turn, reverse pass) */
 	for (i = 0; i < CODE39_ELEMENTS; i++) {
 		rev[i] = w[CODE39_ELEMENTS - 1 - i];
 	}
 	letter = 0;
-	TEST_CHECK("S3-U02", (code39_decode(rev, CODE39_ELEMENTS, &letter) == C39_OK)
-		   && (letter == 'A'), "Code 39 '*A*' backwards");
+	TEST_CHECK("S3-U02",
+		(code39_decode(rev, CODE39_ELEMENTS, &letter) == C39_OK) &&
+		   (letter == 'A'), "Code 39 '*A*' backwards");
 
 	/* S3-U03: a partial read (28 elements) is rejected (VA2) */
 	TEST_CHECK("S3-U03", code39_decode(w, 28, &letter) == C39_ERR_COUNT,
@@ -253,14 +272,16 @@ EXPORT void subsystem3_test(void)
 
 	/* S3-U04: letters map to commands through the MQTT map (IF-15), not
 	   a fixed table; a mapped 'Z' is a movement, not the end marker */
-	map = APP_BARCODE_MAP('F', 'Z', 'A', 'W');
-	TEST_CHECK("S3-U04a", (line_letter_to_cmd('F', map) == BC_GO_STRAIGHT) &&
+	map = app_barcode_map_pack('F', 'Z', 'A', 'W');
+	TEST_CHECK("S3-U04a",
+		(line_letter_to_cmd('F', map) == BC_GO_STRAIGHT) &&
 		   (line_letter_to_cmd('Z', map) == BC_U_TURN) &&
 		   (line_letter_to_cmd('A', map) == BC_TURN_LEFT) &&
 		   (line_letter_to_cmd('W', map) == BC_TURN_RIGHT) &&
 		   (line_letter_to_cmd('X', map) == BC_UNRECOGNISED),
 		   "letter-to-movement from the MQTT map (FR2)");
-	TEST_CHECK("S3-U04b", (line_letter_to_cmd('A', 0U) == BC_UNRECOGNISED) &&
+	TEST_CHECK("S3-U04b",
+		(line_letter_to_cmd('A', 0U) == BC_UNRECOGNISED) &&
 		   (line_letter_to_cmd('Z', 0U) == BC_END_OF_COURSE),
 		   "no map: nothing hard-coded, only the end marker");
 
@@ -281,14 +302,27 @@ EXPORT void subsystem3_test(void)
 			}
 			l1 = 0;
 			l2 = 0;
-			if ((code39_decode(w, CODE39_ELEMENTS, &l1) == C39_OK) &&
-			    (code39_decode(rev, CODE39_ELEMENTS, &l2) == C39_OK) &&
+			if ((code39_decode(w, CODE39_ELEMENTS,
+				&l1) == C39_OK) &&
+			    (code39_decode(rev, CODE39_ELEMENTS,
+			    	&l2) == C39_OK) &&
 			    (l1 == (UB)('A' + k)) && (l2 == (UB)('A' + k))) {
 				ok++;
 			}
 		}
-		TEST_CHECK("S3-U09", ok == 26, "A-Z: each letter decodes the same both ways");
+		TEST_CHECK("S3-U09", ok == 26,
+			"A-Z: each letter decodes the same both ways");
 	}
+}
+
+/* S3-U05, U06: the whole barcode reader on 1 kHz samples */
+LOCAL void s3_test_reader(void)
+{
+	UW		w[CODE39_ELEMENTS];
+	UB		letter = 0;
+	INT		i, reason = 0;
+	BC_READER	r;
+	BC_RESULT	res;
 
 	/* S3-U05: whole reader at 300 mm/s (300 µm per sample): quiet zone,
 	   '*Z*', quiet zone -> one barcode, no reject */
@@ -296,13 +330,18 @@ EXPORT void subsystem3_test(void)
 	build_symbol(0x0D0, w);
 	res = feed_run(&r, FALSE, 20000U, 300U, &letter, &reason);
 	for (i = 0; i < CODE39_ELEMENTS; i++) {
-		BC_RESULT x = feed_run(&r, (i % 2) == 0, w[i], 300U, &letter, &reason);
-		if (x != BCR_NONE) res = x;
+		BC_RESULT x = feed_run(&r, (i % 2) == 0, w[i], 300U, &letter,
+			&reason);
+		if (x != BCR_NONE) {
+			res = x;
+		}
 	}
 	letter = 0;
 	res = feed_run(&r, FALSE, 30000U, 300U, &letter, &reason);
-	TEST_CHECK("S3-U05", (res == BCR_BARCODE) && (letter == 'Z') && (r.last_n == 29),
-		   "reader decodes '*Z*' from 1 kHz samples, 29 elements counted");
+	TEST_CHECK("S3-U05", (res == BCR_BARCODE) && (letter == 'Z') &&
+		(r.last_n == 29),
+		   "reader decodes '*Z*' from 1 kHz samples, 29 elements "
+		   "counted");
 
 	/* S3-U06: an 18 mm stripe with white both sides is a junction,
 	   not a wide bar (F3, A3) */
@@ -310,7 +349,14 @@ EXPORT void subsystem3_test(void)
 	(void)feed_run(&r, FALSE, 20000U, 300U, &letter, &reason);
 	(void)feed_run(&r, TRUE, 18000U, 300U, &letter, &reason);
 	res = feed_run(&r, FALSE, 40000U, 300U, &letter, &reason);
-	TEST_CHECK("S3-U06", res == BCR_JUNCTION, "18 mm single stripe -> junction");
+	TEST_CHECK("S3-U06", res == BCR_JUNCTION,
+		"18 mm single stripe -> junction");
+}
+
+/* S3-U07, U10: line error convention and the cross-junction detector */
+LOCAL void s3_test_line_error(void)
+{
+	BOOL	on_line;
 
 	/* S3-U07: line error sign convention (IF-08) */
 	TEST_CHECK("S3-U07a", line_error(900, 200, 0, &on_line) > 0 && on_line,
@@ -319,11 +365,14 @@ EXPORT void subsystem3_test(void)
 		   "only IR_R black -> error < 0 (steer right)");
 	TEST_CHECK("S3-U07d", line_error(0, 1000, 0, &on_line) == 0 && on_line,
 		   "only IR_C black -> error 0 (straight)");
-	TEST_CHECK("S3-U07f", line_error(0, 1000, 1000, &on_line) < 0 && on_line,
+	TEST_CHECK("S3-U07f", line_error(0, 1000, 1000, &on_line) < 0 &&
+		on_line,
 		   "IR_C + IR_R black -> gentle right");
 	(void)line_error(0, 300, 100, &on_line);
-	TEST_CHECK("S3-U07e", !on_line, "all below black -> not on the line (keep last side)");
-	TEST_CHECK("S3-U07c", line_unpack_err(line_pack(-1000, LINE_F_VALID, 1234)) == -1000,
+	TEST_CHECK("S3-U07e", !on_line,
+		"all below black -> not on the line (keep last side)");
+	TEST_CHECK("S3-U07c",
+		line_unpack_err(line_pack(-1000, LINE_F_VALID, 1234)) == -1000,
 		   "line word packs -1000 losslessly");
 
 	/* S3-U10: cross-junction detector (IF-09 kind 6) */
@@ -334,11 +383,21 @@ EXPORT void subsystem3_test(void)
 	TEST_CHECK("S3-U10c", cross_run(TRUE, FALSE, 18000U, 1U) == 0,
 		   "left-only branch (R white) -> not a cross");
 	TEST_CHECK("S3-U10d", cross_run(TRUE, TRUE, 9000U, 15U) == 0,
-		   "barcode-like bars (several, close together) -> not a cross");
+		   "barcode-like bars (several, close together) -> not a "
+		   "cross");
 	TEST_CHECK("S3-U10e", cross_run(TRUE, TRUE, 120000U, 1U) == 0,
 		   "120 mm black under L (main line) -> not a cross");
 	TEST_CHECK("S3-U10f", cross_back_um >= 18000U,
 		   "reported middle is behind the sensor row");
+}
+
+/* S3-U11..U13: debounce, quiet-zone speck, encoder distance filter */
+LOCAL void s3_test_debounce(void)
+{
+	UB		letter = 0;
+	INT		reason = 0;
+	BC_READER	r;
+	BC_RESULT	res;
 
 	/* S3-U11: debounce.  The sensor swings back 1.5 mm every 4 mm (and
 	   2.4 mm every 7 mm) while crossing '*A*': each re-crossed line is
@@ -348,18 +407,24 @@ EXPORT void subsystem3_test(void)
 
 		letter = 0;
 		res = wiggle_read(0U, 0U, &letter, &bars);
-		TEST_CHECK("S3-U11a", (res == BCR_BARCODE) && (letter == 'A') && (bars == 15),
+		TEST_CHECK("S3-U11a", (res == BCR_BARCODE) && (letter == 'A') &&
+			(bars == 15),
 			   "straight pass: 'A', 15 lines");
 		letter = 0;
 		res = wiggle_read(4000U, 1500U, &letter, &bars);
-		TEST_CHECK("S3-U11b", (res == BCR_BARCODE) && (letter == 'A') && (bars == 15),
-			   "swinging back 1.5 mm every 4 mm: still 'A', 15 lines");
+		TEST_CHECK("S3-U11b", (res == BCR_BARCODE) && (letter == 'A') &&
+			(bars == 15),
+			   "swinging back 1.5 mm every 4 mm: still 'A', 15 "
+			   "lines");
 		letter = 0;
 		res = wiggle_read(7000U, 2400U, &letter, &bars);
-		TEST_CHECK("S3-U11c", (res == BCR_BARCODE) && (letter == 'A') && (bars == 15),
-			   "swinging back 2.4 mm every 7 mm: still 'A', 15 lines");
+		TEST_CHECK("S3-U11c", (res == BCR_BARCODE) && (letter == 'A') &&
+			(bars == 15),
+			   "swinging back 2.4 mm every 7 mm: still 'A', 15 "
+			   "lines");
 	}
-	/* S3-U12: a 0.3 mm black speck in the quiet zone is noise, not a line */
+	/* S3-U12: a 0.3 mm black speck in the quiet zone is noise, not a
+	   line */
 	bc_reader_reset(&r);
 	(void)feed_run(&r, FALSE, 6000U, 300U, &letter, &reason);
 	(void)feed_run(&r, TRUE, 300U, 300U, &letter, &reason);
@@ -374,15 +439,25 @@ EXPORT void subsystem3_test(void)
 		W		d1, d2, d3, d4;
 
 		enc_dist_init(&e, 1000, 2000, 0U);
-		d1 = enc_dist_step(&e, 1016, 2016, 20U, 74, 25, 117);	/* straight, ~1.2 mm */
-		d2 = enc_dist_step(&e, 1020, 2036, 40U, 74, 25, 117);	/* steering left   */
-		d3 = enc_dist_step(&e, 1010, 2046, 60U, 74, 25, 117);	/* pivot left: IR_L goes back */
-		d4 = enc_dist_step(&e, 9000, 2050, 80U, 74, 25, 117);	/* 590 mm in 20 ms: bad read  */
-		TEST_CHECK("S3-U13", (d1 == 16 * 74) && (d2 > 0) && (d2 < (18 * 74)) &&
+		/* straight, ~1.2 mm */
+		d1 = enc_dist_step(&e, 1016, 2016, 20U, 74, 25, 117);
+		/* steering left */
+		d2 = enc_dist_step(&e, 1020, 2036, 40U, 74, 25, 117);
+		/* pivot left: IR_L goes back */
+		d3 = enc_dist_step(&e, 1010, 2046, 60U, 74, 25, 117);
+		/* 590 mm in 20 ms: bad read */
+		d4 = enc_dist_step(&e, 9000, 2050, 80U, 74, 25, 117);
+		TEST_CHECK("S3-U13", (d1 == 16 * 74) && (d2 > 0) &&
+			(d2 < (18 * 74)) &&
 			   (d3 < 0) && (d4 == 0) && (e.rejects == 1U),
-			   "encoder distance: exact travel, slower/backwards IR_L when steering, jump dropped");
+			   "encoder distance: exact travel, slower/backwards "
+			   "IR_L when steering, jump dropped");
 	}
+}
 
+/* S3-U14 (13 Nov): IR_L on AO, every letter both ways */
+LOCAL void s3_test_ao(void)
+{
 	/* S3-U14 (13 Nov): IR_L on AO.  Every letter, both directions,
 	   with smooth analogue edges (4 mm spot) and noise, whether black
 	   calibrates to full scale (1000) or the borrowed calibration is
@@ -398,17 +473,35 @@ EXPORT void subsystem3_test(void)
 
 		for (pk = 0; pk < 3; pk++) {
 			for (k = 0; k < 26; k++) {
-				if ((ao_read(pat_az2[k], FALSE, 4000, peaks[pk]) == (UB)('A' + k)) &&
-				    (ao_read(pat_az2[k], TRUE, 4000, peaks[pk]) == (UB)('A' + k))) {
+				if ((ao_read(pat_az2[k], FALSE, 4000,
+					peaks[pk]) == (UB)('A' + k)) &&
+				    (ao_read(pat_az2[k], TRUE, 4000,
+				    	peaks[pk]) == (UB)('A' + k))) {
 					ok[pk]++;
 				}
 			}
 		}
-		tm_printf((UB*)"[TEST] S3 info: AO reads (both ways) black 1000: %d/26, 700: %d/26, 500: %d/26\n",
+		tm_printf((UB*)"[TEST] S3 info: AO reads (both ways) black "
+			       "1000: %d/26, 700: %d/26, 500: %d/26\n",
 			  ok[0], ok[1], ok[2]);
-		TEST_CHECK("S3-U14", (ok[0] == 26) && (ok[1] == 26) && (ok[2] == 26),
-			   "IR_L on AO: A-Z both ways with smooth edges, any black level");
+		TEST_CHECK("S3-U14", (ok[0] == 26) && (ok[1] == 26) &&
+			(ok[2] == 26),
+			   "IR_L on AO: A-Z both ways with smooth edges, any "
+			   "black level");
 	}
+}
+
+EXPORT void subsystem3_test(void)
+{
+	UW	wr1, wr2;
+
+	test_init();
+	s3_test_track();
+	s3_test_decode();
+	s3_test_reader();
+	s3_test_line_error();
+	s3_test_debounce();
+	s3_test_ao();
 
 	/* S3-U08: DMA ring keeps advancing (hardware sampling alive) */
 	wr1 = drv_ir_adc_write_index();
@@ -416,10 +509,12 @@ EXPORT void subsystem3_test(void)
 	wr2 = drv_ir_adc_write_index();
 	TEST_CHECK("S3-U08", wr1 != wr2, "DMA ring write index advances");
 
-	tm_printf((UB*)"[TEST] S3 info: line word 0x%08x, reads %d ok / %d rejected\n",
-		  line_latest, line_read_stats & 0xFFFFU, line_read_stats >> 16);
+	tm_printf((UB*)"[TEST] S3 info: line word 0x%08x, reads %d ok / %d "
+		       "rejected\n",
+		  line_latest, line_read_stats & 0xFFFFU,
+		  	line_read_stats >> 16);
 
-	TEST_SUMMARY("subsystem3");
+	test_summary("subsystem3");
 }
 
 #endif /* APP_TEST */

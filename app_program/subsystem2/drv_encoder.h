@@ -1,6 +1,7 @@
 /*
  *	drv_encoder.h
- *	Subsystem 2 -- PIO quadrature encoder driver (left GP2/GP3, right GP4/GP5).
+ *	Subsystem 2 -- PIO quadrature encoder driver (left GP2/GP3, right
+ *	GP4/GP5).
  *
  *	Plain C interface (stdint only): drv_encoder.c includes Pico SDK
  *	headers, which must not be mixed with tk/tkernel.h in one file

@@ -19,7 +19,8 @@
 IMPORT void drv_i2c0_init(UINT sda_pin, UINT scl_pin);
 /* Write wlen bytes, then (if rlen > 0) repeated-start and read rlen.
    Returns E_OK, E_IO (NACK / abort) or E_TMOUT. */
-IMPORT ER   drv_i2c0_xfer(UB addr, const UB *wbuf, UINT wlen, UB *rbuf, UINT rlen);
+IMPORT ER   drv_i2c0_xfer(UB addr, const UB *wbuf, UINT wlen, UB *rbuf,
+	UINT rlen);
 IMPORT ER   drv_i2c0_write_reg(UB addr, UB reg, UB val);
 IMPORT ER   drv_i2c0_read_regs(UB addr, UB reg, UB *buf, UINT n);
 

@@ -35,7 +35,8 @@ LOCAL COMMS_STATE link_state(void)
 	}
 #if TM_NET_LWIP
 	if (st.link_status < 0) {
-		return CS_WAITING_TO_RETRY;		/* join failed: driver retries */
+		/* join failed: driver retries */
+		return CS_WAITING_TO_RETRY;
 	}
 	if (st.link_status != CYW43_LINK_UP_VALUE) {
 		return CS_WIFI_CONNECTING;
@@ -77,7 +78,8 @@ EXPORT void comms_task(INT stacd, void *exinf)
 
 		/* Newest finished snapshot (older ones are superseded) */
 		have = FALSE;
-		while (tk_rcv_mbf(mbf_telemetry, &snap, TMO_POL) == (INT)sizeof(snap)) {
+		while (tk_rcv_mbf(mbf_telemetry, &snap,
+			TMO_POL) == (INT)sizeof(snap)) {
 			newest = snap;
 			have = TRUE;
 		}
@@ -91,7 +93,8 @@ EXPORT void comms_task(INT stacd, void *exinf)
 		if (st != prev) {
 			app_log((UB*)"comms: link state %d -> %d\n", prev, st);
 			if (prev == CS_ONLINE) {
-				app_report_fault(FLT_WIFI);	/* reported only */
+				/* reported only */
+				app_report_fault(FLT_WIFI);
 			}
 			prev = st;
 		}

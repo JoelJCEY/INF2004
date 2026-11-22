@@ -22,19 +22,13 @@ LOCAL const UB golden_tlm[WIRE_TLM_LEN] = {
 	0x04, 0x03, 0x02, 0x01
 };
 
-EXPORT void subsystem1_test(void)
+/* S1-U01: telemetry encoder against the golden vector */
+LOCAL void s1_test_golden(void)
 {
 	TLM_SNAPSHOT	s = {0};
 	UB		buf[WIRE_TLM_LEN];
-	REMOTE_MSG	m;
 	INT		i, len;
 	BOOL		same = TRUE;
-	const UB	stop_ok[3]  = { 0x01, 0x02, 0x10 };
-	const UB	bad_ver[3]  = { 0x02, 0x02, 0x10 };
-	const UB	reserved[3] = { 0x01, 0x00, 0x10 };
-	const UB	bad_bits[3] = { 0x01, 0x42, 0x10 };
-
-	TEST_INIT();
 
 	/* S1-U01: telemetry encoder matches the golden vector exactly */
 	/* LINE_FOLLOWING, TURN_LEFT, last START, line flags 0x9,
@@ -58,15 +52,38 @@ EXPORT void subsystem1_test(void)
 			same = FALSE;
 		}
 	}
-	TEST_CHECK("S1-U01", (len == WIRE_TLM_LEN) && same, "telemetry golden vector");
+	TEST_CHECK("S1-U01", (len == WIRE_TLM_LEN) && same,
+		   "telemetry golden vector");
+}
+
+/* S1-U02: command frames */
+LOCAL void s1_test_commands(void)
+{
+	REMOTE_MSG	m;
+	const UB	stop_ok[3]  = { 0x01, 0x02, 0x10 };
+	const UB	bad_ver[3]  = { 0x02, 0x02, 0x10 };
+	const UB	reserved[3] = { 0x01, 0x00, 0x10 };
+	const UB	bad_bits[3] = { 0x01, 0x42, 0x10 };
 
 	/* S1-U02: a valid STOP decodes; invalid frames are rejected */
 	TEST_CHECK("S1-U02a", (comms_decode_cmd(stop_ok, 3, &m) == E_OK) &&
-		   (m.cmd == RC_STOP) && (m.seq == 0x10U), "STOP command decodes");
-	TEST_CHECK("S1-U02b", comms_decode_cmd(bad_ver, 3, &m) != E_OK, "wrong version rejected");
-	TEST_CHECK("S1-U02c", comms_decode_cmd(reserved, 3, &m) != E_OK, "reserved code 0 rejected");
-	TEST_CHECK("S1-U02d", comms_decode_cmd(bad_bits, 3, &m) != E_OK, "reserved bits rejected");
-	TEST_CHECK("S1-U02e", comms_decode_cmd(stop_ok, 2, &m) != E_OK, "short frame rejected");
+		   (m.cmd == RC_STOP) && (m.seq == 0x10U),
+		   "STOP command decodes");
+	TEST_CHECK("S1-U02b", comms_decode_cmd(bad_ver, 3, &m) != E_OK,
+		"wrong version rejected");
+	TEST_CHECK("S1-U02c", comms_decode_cmd(reserved, 3, &m) != E_OK,
+		"reserved code 0 rejected");
+	TEST_CHECK("S1-U02d", comms_decode_cmd(bad_bits, 3, &m) != E_OK,
+		"reserved bits rejected");
+	TEST_CHECK("S1-U02e", comms_decode_cmd(stop_ok, 2, &m) != E_OK,
+		"short frame rejected");
+}
+
+/* S1-U04, U05: barcode map and barcode test mode frames */
+LOCAL void s1_test_frames(void)
+{
+	REMOTE_MSG	m;
+	const UB	stop_ok[3]  = { 0x01, 0x02, 0x10 };
 
 	/* S1-U04: barcode map frame (IF-15) */
 	{
@@ -76,16 +93,21 @@ EXPORT void subsystem1_test(void)
 		const UB map_star[7] = { 0x01, 0x10, 0x05, '*', 'Z', 'A', 'W' };
 		UW	map = 0;
 
-		TEST_CHECK("S1-U04a", (comms_decode_map(map_ok, 7, &map) == E_OK) &&
-			   (map == APP_BARCODE_MAP('F', 'Z', 'A', 'W')) &&
+		TEST_CHECK("S1-U04a",
+			(comms_decode_map(map_ok, 7, &map) == E_OK) &&
+			   (map == app_barcode_map_pack('F', 'Z', 'A', 'W')) &&
 			   (app_barcode_lookup(map, 'Z') == BC_U_TURN),
-			   "map frame decodes: forward F, u-turn Z, left A, right W");
-		TEST_CHECK("S1-U04b", (comms_decode_map(map_dup, 7, &map) != E_OK) &&
+			   "map frame decodes: forward F, u-turn Z, left A, "
+			   "right W");
+		TEST_CHECK("S1-U04b",
+			(comms_decode_map(map_dup, 7, &map) != E_OK) &&
 			   (comms_decode_map(map_low, 7, &map) != E_OK) &&
 			   (comms_decode_map(map_star, 7, &map) != E_OK) &&
 			   (comms_decode_map(map_ok, 6, &map) != E_OK),
-			   "map frame: repeated, lower-case, '*' or short rejected");
-		TEST_CHECK("S1-U04c", (comms_decode_cmd(map_ok, 7, &m) != E_OK) &&
+			   "map frame: repeated, lower-case, '*' or short "
+			   "rejected");
+		TEST_CHECK("S1-U04c",
+			(comms_decode_cmd(map_ok, 7, &m) != E_OK) &&
 			   !comms_is_map_frame(stop_ok, 3),
 			   "map frame and START/STOP frame never mixed up");
 	}
@@ -97,12 +119,23 @@ EXPORT void subsystem1_test(void)
 		const UB t_bad[4] = { 0x01, 0x11, 0x07, 0x02 };
 		UW	on = 9;
 
-		TEST_CHECK("S1-U05", (comms_decode_bc_test(t_on, 4, &on) == E_OK) && (on == 1U) &&
-			   (comms_decode_bc_test(t_off, 4, &on) == E_OK) && (on == 0U) &&
+		TEST_CHECK("S1-U05",
+			(comms_decode_bc_test(t_on, 4, &on) == E_OK) &&
+				(on == 1U) &&
+			   (comms_decode_bc_test(t_off, 4, &on) == E_OK) &&
+			   	(on == 0U) &&
 			   (comms_decode_bc_test(t_bad, 4, &on) != E_OK) &&
-			   (comms_decode_cmd(t_on, 4, &m) != E_OK) && !comms_is_map_frame(t_on, 4),
-			   "barcode test on/off frame decodes, never mixed up with the others");
+			   (comms_decode_cmd(t_on, 4, &m) != E_OK) &&
+			   	!comms_is_map_frame(t_on, 4),
+			   "barcode test on/off frame decodes, never mixed "
+			   "up with the others");
 	}
+}
+
+/* S1-U03: packed status word */
+LOCAL void s1_test_status(void)
+{
+	TLM_SNAPSHOT	s = {0};
 
 	/* S1-U03: packed status fields round-trip through their masks */
 	s.status = ((UW)VS_FAULT_STOP << TLM_STATE_SHIFT) |
@@ -110,13 +143,24 @@ EXPORT void subsystem1_test(void)
 		   (24UL << TLM_SERVO_SHIFT) | (1UL << TLM_LINK_SHIFT);
 	TEST_CHECK("S1-U03", (TLM_FIELD(s.status, STATE) == VS_FAULT_STOP) &&
 		   (TLM_FIELD(s.status, BARCODE) == BC_U_TURN) &&
-		   (TLM_FIELD(s.status, SERVO) == 24U) && (TLM_BIT(s.status, LINK) == 1U),
+		   (TLM_FIELD(s.status, SERVO) == 24U) &&
+		   (TLM_BIT(s.status, LINK) == 1U),
 		   "status word fields (state 4 bits, barcode 3, servo 5)");
+}
 
-	tm_printf((UB*)"[TEST] S1 info: link state %d, outbox dropped %d, rx rejected %d\n",
+EXPORT void subsystem1_test(void)
+{
+	test_init();
+	s1_test_golden();
+	s1_test_commands();
+	s1_test_frames();
+	s1_test_status();
+
+	tm_printf((UB*)"[TEST] S1 info: link state %d, outbox dropped %d, rx "
+		       "rejected %d\n",
 		  comms_state_word, comms_outbox_dropped, comms_rx_rejected);
 
-	TEST_SUMMARY("subsystem1");
+	test_summary("subsystem1");
 }
 
 #endif /* APP_TEST */

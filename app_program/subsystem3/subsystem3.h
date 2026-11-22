@@ -53,9 +53,11 @@
 #define EDGE_LOST_MM		150U	/* white this far: line really lost */
 
 #define IR_C_DIGITAL		1
-#define IR_C_DO_PIN		7	/* the CENTRE module's DO wire goes to GP7 (28 Oct) */
+/* the CENTRE module's DO wire goes to GP7 (28 Oct) */
+#define IR_C_DO_PIN		7
 #define IR_C_DO_BLACK_HIGH	1
-#define IR_R_DIGITAL		0	/* 16 Nov: RIGHT on DO: fixed 0..4095 scale (task_line.c sensor_norm) */
+/* 16 Nov: RIGHT on DO: fixed 0..4095 scale (task_line.c sensor_norm) */
+#define IR_R_DIGITAL		0
 /* Confirmed wiring: MIDDLE DO is read on GP7; RIGHT DO remains on the
    existing swapped ADC input (GP27). ADC averaging of its 0/4095 levels
    is retained. LEFT AO (GP26) is never used to steer the car. */
@@ -74,13 +76,14 @@
 #define LINE_F_VALID		0x1U	/* a fresh value was computed        */
 #define LINE_F_SATURATED	0x2U	/* both white: last-known-side value  */
 #define LINE_F_LOST		0x4U	/* > 200 mm without the line          */
-#define LINE_F_ON_LINE		0x8U	/* any IR sensor sees black            */
+/* any IR sensor sees black */
+#define LINE_F_ON_LINE		0x8U
 
 IMPORT volatile UW line_latest;
 
 Inline UW line_pack(INT err, UINT flags, UW t_ms)
 {
-	INT	e = APP_CLAMP(err, -2048, 2047) + 2048;
+	INT	e = app_clamp(err, -2048, 2047) + 2048;
 
 	return (t_ms & 0xFFFFU) | (((UW)e & 0x0FFFU) << 16) |
 	       (((UW)flags & 0xFU) << 28);
@@ -104,14 +107,19 @@ Inline UW line_unpack_age_ms(UW w, UW now_ms)
  *  by tk_set_flg(flg_sys, EVF_NAV).
  * --------------------------------------------------------------------- */
 typedef enum {
-	NAV_BARCODE		= 1,	/* cmd + letter valid                  */
-	NAV_JUNCTION_RIGHT	= 2,	/* wide single stripe on IR_R (F3)     */
-	NAV_LINE_LOST		= 3,	/* also sets FLT_LINE_LOST             */
-	NAV_LINE_FOUND		= 4,	/* line seen again after LINE_LOST     */
-	NAV_READ_REJECTED	= 5,	/* diagnostic: partial/invalid read    */
-	NAV_JUNCTION_CROSS	= 6	/* cross-junction (line_sense.h); path_mm
-					   = odometry at the MIDDLE of the
-					   crossing line, not "now"            */
+	/* cmd + letter valid */
+	NAV_BARCODE		= 1,
+	/* wide single stripe on IR_R (F3) */
+	NAV_JUNCTION_RIGHT	= 2,
+	/* also sets FLT_LINE_LOST */
+	NAV_LINE_LOST		= 3,
+	/* line seen again after LINE_LOST */
+	NAV_LINE_FOUND		= 4,
+	/* diagnostic: partial/invalid read */
+	NAV_READ_REJECTED	= 5,
+	/* cross-junction (line_sense.h); path_mm = odometry at the MIDDLE of
+	   the crossing line, not "now" */
+	NAV_JUNCTION_CROSS	= 6
 } NAV_KIND;
 
 typedef struct {
@@ -159,8 +167,10 @@ IMPORT volatile UW line_norm[3];
 IMPORT volatile UW line_bar_total;
 IMPORT volatile UW line_bar_pass;
 IMPORT volatile UW line_reader_n;
-IMPORT volatile UW line_bar_recross;	/* re-crossed lines ignored (debounce) */
-IMPORT volatile UW line_enc_rejects;	/* bad encoder jumps dropped (filter)  */
+/* re-crossed lines ignored (debounce) */
+IMPORT volatile UW line_bar_recross;
+/* bad encoder jumps dropped (filter) */
+IMPORT volatile UW line_enc_rejects;
 
 /* Last finished barcode read, for the dashboard's barcode picture
    (2 Nov).  Writer line_task only; readers use the sequence like a lock:

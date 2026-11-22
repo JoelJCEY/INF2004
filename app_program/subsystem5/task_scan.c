@@ -19,15 +19,16 @@
 #include "ctrl_logic.h"		/* CTRL_BYPASS_BACKUP_MM (31 Oct) */
 #include "../subsystem2/subsystem2.h"	/* IF-07 odometry */
 
-#define US_MIN_VALID_MM		40U	/* 28 Oct log: the car's own front bracket
-					   echoes at 26-35 mm, every time; closer
-					   than this is the car, not an obstacle */
+/* 28 Oct log: the car's own front bracket echoes at 26-35 mm, every time;
+   closer than this is the car, not an obstacle */
+#define US_MIN_VALID_MM		40U
 #define WATCH_SLEEP_MS		60	/* 31 Oct (was 50): the 60 ms gap the
 					   HC-SR04 manual asks for            */
 #define HUMP_IGNORE_MAX_MM	400U	/* bound on the hump pause (F10)   */
 #define GUARD_MIN_MM		120U
 #define NO_ECHO_LIMIT		3
-#define SWEEP_TRIES		3	/* pings per sweep angle before giving up (31 Oct) */
+/* pings per sweep angle before giving up (31 Oct) */
+#define SWEEP_TRIES		3
 #define STOP_WAIT_MS		400	/* let the car stop before sweeping */
 
 typedef enum {
@@ -46,15 +47,19 @@ EXPORT volatile UW scan_pass_seq;
 EXPORT volatile UW scan_pass_extra_mm;
 
 /* 31 Oct: side watch while passing the obstacle */
-#define PASS_SIDE_TOL_MM	60	/* 4 Nov: later hits must be this close to the
-					   first hit's sideways distance: the obstacle's
-					   side is a straight face; walls, floor or other
-					   things farther out no longer count */
-#define PASS_SIDE_MM		300	/* echo this close SIDEWAYS = still beside it
-					   (4 Nov; was 400 mm range at 45 deg = 283 sideways) */
-#define PASS_GONE_PINGS		2	/* this many misses in a row = behind us   */
-#define PASS_MARGIN_MM		50	/* room for the rear to swing when turning */
-LOCAL UW	last_depth_mm;		/* fixed estimate from the last profile */
+/* 4 Nov: later hits must be this close to the first hit's sideways distance:
+   the obstacle's side is a straight face; walls, floor or other things farther
+   out no longer count */
+#define PASS_SIDE_TOL_MM	60
+/* echo this close SIDEWAYS = still beside it (4 Nov; was 400 mm range at 45 deg
+   = 283 sideways) */
+#define PASS_SIDE_MM		300
+/* this many misses in a row = behind us */
+#define PASS_GONE_PINGS		2
+/* room for the rear to swing when turning */
+#define PASS_MARGIN_MM		50
+/* fixed estimate from the last profile */
+LOCAL UW	last_depth_mm;
 
 /* 4 Nov: GLANCE scan while driving.  The beam is ~15 deg wide, so looking
    only straight ahead it covers +-2.6 cm at 20 cm: an obstacle a few cm
@@ -64,7 +69,8 @@ LOCAL UW	last_depth_mm;		/* fixed estimate from the last profile */
    half width + margin) at the stop distance AHEAD.
    13 Nov: +-10 deg covered only 12.6 cm at 20 cm (car: 16 cm); now
    70..110 deg with a memory (scan_profile.h). */
-#define GLANCE_SETTLE_MS	40	/* after the (ramped) move, before the ping */
+/* after the (ramped) move, before the ping */
+#define GLANCE_SETTLE_MS	40
 /* 13 Nov: 5 angles (70..110 deg) and a memory of what was seen, so the
    whole car width is covered (scan_profile.h, GLANCE_xxx / gmem_xxx) */
 LOCAL UINT	glance_i;
@@ -102,7 +108,7 @@ LOCAL US_RESULT ping_at(UINT idx, UW *mm)
 	UINT	steps;
 
 	if (idx != servo_idx) {
-		steps = (UINT)APP_ABS((INT)idx - (INT)servo_idx);
+		steps = (UINT)app_abs((INT)idx - (INT)servo_idx);
 		drv_servo_set_idx(idx);
 		servo_idx = idx;
 		/* ~10 ms per 5° step plus settling, at least the ping gap */
@@ -156,19 +162,24 @@ LOCAL BOOL confirmed(const SCAN_SWEEP *sw, UW *hits_out, UW *near_out)
 
 	for (i = SCAN_IDX_MAX; i >= SCAN_IDX_MIN; i--) {
 		d = sw->dist[i];
-		x = APP_ABS(((W)d * scan_cos1000((UINT)i)) / 1000);
+		x = app_abs(((W)d * scan_cos1000((UINT)i)) / 1000);
 		if ((d != SCAN_NO_READING) && (d >= US_MIN_VALID_MM) &&
 		    (d < SCAN_CONFIRM_MM) &&
 		    (x <= (SCAN_CAR_HALF_W_MM + SCAN_MARGIN_MM))) {
 			run++;
-			if (d < nearest) nearest = d;
+			if (d < nearest) {
+				nearest = d;
+			}
 			if ((i == SCAN_IDX_MIN) || (i == SCAN_IDX_MAX)) {
-				end_hit = TRUE;	/* 13 Nov: object off to the side */
+				/* 13 Nov: object off to the side */
+				end_hit = TRUE;
 			}
 		} else {
 			run = 0;
 		}
-		if (run > best) best = run;
+		if (run > best) {
+			best = run;
+		}
 	}
 	*hits_out = (UW)best;
 	*near_out = (nearest == 0xFFFFU) ? 0U : nearest;
@@ -194,7 +205,7 @@ LOCAL void do_sweep(BOOL check)
 	}
 
 	/* Wait (bounded) for the car to stop after OB_ALERT */
-	while ((APP_ABS(motion_speed_avg()) > 20) &&
+	while ((app_abs(motion_speed_avg()) > 20) &&
 	       ((app_time_ms() - t0) < STOP_WAIT_MS)) {
 		tk_dly_tsk(20);
 	}
@@ -209,17 +220,21 @@ LOCAL void do_sweep(BOOL check)
 		INT	tries;
 
 		r = US_NO_ECHO;
-		for (tries = 0; (tries < SWEEP_TRIES) && (r == US_NO_ECHO); tries++) {
-			r = ping_at((UINT)i, &mm);	/* same angle: 60 ms gap */
+		for (tries = 0; (tries < SWEEP_TRIES) &&
+			(r == US_NO_ECHO); tries++) {
+			/* same angle: 60 ms gap */
+			r = ping_at((UINT)i, &mm);
 		}
 		if (r == US_NO_ECHO) {
 			noecho++;
 			continue;			/* left unmeasured */
 		}
-		sw.dist[i] = (UH)(((r == US_OK) && (mm >= US_MIN_VALID_MM)) ? mm : US_FAR_MM);
+		sw.dist[i] = (UH)(((r == US_OK) && (mm >= US_MIN_VALID_MM))
+			? mm : US_FAR_MM);
 	}
 	if (noecho > 0) {
-		app_log((UB*)"scan: %d of %d angles gave no echo after %d tries\n",
+		app_log((UB*)"scan: %d of %d angles gave no echo after %d "
+			     "tries\n",
 			  noecho, SCAN_IDX_MAX - SCAN_IDX_MIN + 1, SWEEP_TRIES);
 	}
 	if ((noecho * 2) > (SCAN_IDX_MAX - SCAN_IDX_MIN + 1)) {
@@ -242,11 +257,15 @@ LOCAL void do_sweep(BOOL check)
 		/* false alarm: closest = 0 tells ctrl_task to carry on */
 		m.kind = OB_PROFILE;
 		m.side = OBS_SIDE_NONE;
-		app_log((UB*)"scan: NOT an obstacle (in path under %d mm at only %d angle(s), need %d). Carrying on (%d ms)\n",
-			  SCAN_CONFIRM_MM, hits, SCAN_CONFIRM_HITS, app_time_ms() - t0);
+		app_log((UB*)"scan: NOT an obstacle (in path under %d mm at "
+			     "only %d angle(s), need %d). Carrying on (%d "
+			     "ms)\n",
+			  SCAN_CONFIRM_MM, hits, SCAN_CONFIRM_HITS,
+			  	app_time_ms() - t0);
 	} else if (scan_profile(&sw, &res) == E_OK) {
 		if (check) {
-			app_log((UB*)"scan: obstacle CONFIRMED at %d mm, seen at %d angles\n",
+			app_log((UB*)"scan: obstacle CONFIRMED at %d mm, "
+				     "seen at %d angles\n",
 				  nearest, hits);
 		}
 		m.kind = res.kind;
@@ -260,8 +279,10 @@ LOCAL void do_sweep(BOOL check)
 		m.kind = OB_PROFILE;		/* obstacle gone: closest = 0 */
 		m.side = OBS_SIDE_NONE;
 	}
-	app_log((UB*)"scan: profile kind %d side %d width %d closest %d offset %d depth %d (%d ms)\n",
-		  m.kind, m.side, m.width_mm, m.closest_mm, m.offset_mm, m.depth_mm,
+	app_log((UB*)"scan: profile kind %d side %d width %d closest %d "
+		     "offset %d depth %d (%d ms)\n",
+		  m.kind, m.side, m.width_mm, m.closest_mm, m.offset_mm,
+		  	m.depth_mm,
 		  app_time_ms() - t0);
 	send_obstacle(&m);
 
@@ -269,29 +290,249 @@ LOCAL void do_sweep(BOOL check)
 	servo_idx = SERVO_CENTRE_IDX;
 }
 
+/* ---------------------------------------------------------------------
+ *  scan_task state.  Barr-C (functions kept short): the task loop is
+ *  split into one function per mission phase; they share this context,
+ *  which lives on scan_task's stack exactly like the locals it replaces.
+ * --------------------------------------------------------------------- */
+typedef struct {
+	UW		mm;
+	US_RESULT	r;
+	INT		confirm;
+	INT		noecho;
+	BOOL		alerted;
+	BOOL		swept;
+	BOOL		paused;
+	BOOL		guard_sent;
+	UW		pause_start;
+	UW		last_req;
+	UW		last_state;
+} SCAN_CTX;
+
+/* On a hump the sensor may be seeing the hump itself: pause the watch,
+   for at most HUMP_IGNORE_MAX_MM.  TRUE while paused. */
+LOCAL BOOL scan_hump_pause(SCAN_CTX *c)
+{
+	T_RFLG	rflg;
+
+	(void)tk_ref_flg(flg_sys, &rflg);
+	if ((rflg.flgptn & EVF_HUMP_ACTIVE) != 0U) {
+		if (!c->paused) {
+			c->paused = TRUE;
+			c->pause_start = motion_odo_path_01mm / 10U;
+		}
+		if (((motion_odo_path_01mm / 10U) - c->pause_start) <
+		    HUMP_IGNORE_MAX_MM) {
+			set_state(SC_PAUSED_HUMP, 0);
+			c->confirm = 0;
+			glance_clear();
+			tk_dly_tsk(S5_SCAN_PERIOD_MS);
+			return TRUE;
+		}
+	} else {
+		c->paused = FALSE;
+	}
+	return FALSE;
+}
+
+/* One glance of the whole-width watch, then stop when a remembered
+   (seen twice) object is predicted at the stop distance, even if the
+   beam has moved off it */
+LOCAL void scan_glance(SCAN_CTX *c)
+{
+	UINT	gidx = (UINT)((INT)SERVO_CENTRE_IDX + glance_seq[glance_i]);
+	W	path = (W)(motion_odo_path_01mm / 10U);
+	W	pred;
+
+	glance_i = (glance_i + 1U) % GLANCE_SEQ_N;
+	glance_no++;
+	c->r = glance_ping(gidx, &c->mm);
+	if (c->r == US_OK) {
+		/* + = right */
+		W	side = ((W)c->mm * scan_cos1000(gidx)) / 1000;
+		W	ahead = ((W)c->mm * scan_sin1000(gidx)) / 1000;
+
+		c->noecho = 0;
+		set_state(SC_WATCHING, c->mm);
+		/* Below US_MIN_VALID_MM the HC-SR04 is not reliable (its own
+		   bracket, wires, ringing): ignored */
+		if (SCAN_ENABLE && (c->mm >= US_MIN_VALID_MM) &&
+		    (ahead < GLANCE_LOOK_MM) &&
+		    (app_abs(side) <= (SCAN_CAR_HALF_W_MM + SCAN_MARGIN_MM))) {
+			gmem_add(&gmem, path, ahead, side, glance_no);
+		}
+	} else if (c->r == US_FAR) {
+		c->noecho = 0;
+		set_state(SC_WATCHING, US_FAR_MM);
+	} else {
+		/* no echo: no information */
+		if (++c->noecho == NO_ECHO_LIMIT) {
+			app_report_fault(FLT_NO_ECHO);	/* reported, latched */
+			app_log((UB*)"scan: no echo x3\n");
+		}
+	}
+	path = (W)(motion_odo_path_01mm / 10U);
+	pred = gmem_ahead(&gmem, path, glance_no);
+	if ((pred != GMEM_NONE) && (pred < SCAN_STOP_DIST_MM) && !c->alerted) {
+		c->alerted = TRUE;
+		c->confirm = 2;
+		send_kind(OB_ALERT);
+		app_log((UB*)"scan: something %d mm ahead (servo now %d deg), "
+			  "stopping to check\n", pred, servo_idx_to_deg(gidx));
+	}
+}
+
+/* Driving (line following, barcode turn, hump): watch the whole width */
+LOCAL void scan_watch_step(SCAN_CTX *c, const MISSION_STATE *ms)
+{
+	c->swept = FALSE;
+	c->guard_sent = FALSE;
+	if (scan_hump_pause(c)) {
+		return;
+	}
+	if (ms->state != c->last_state) {
+		glance_clear();		/* new state (turned, etc.): forget */
+		c->last_state = ms->state;
+	}
+	scan_glance(c);
+}
+
+/* 31 Oct: PASS leg: watch the obstacle's side go by.  The beam looks
+   SCAN_PASS_LOOK_DEG, so a hit at d mm is d x sin(angle) ahead of the
+   sensor.  When it stops echoing, its back end was last seen there:
+   drive that far, plus the car length and a margin, then turn in. */
+LOCAL void scan_pass_watch_step(SCAN_CTX *c)
+{
+	UINT	idx = scan_pass_watch - 1U;
+	UW	path = motion_odo_path_01mm / 10U;
+	W	side_mm;
+
+	if (!pw_on) {
+		pw_on = TRUE;
+		pw_seen = FALSE;
+		pw_done = FALSE;
+		pw_gone = 0;
+		pw_start = path;
+	}
+	c->r = ping_at(idx, &c->mm);
+	set_state(SC_GUARD, (c->r == US_OK) ? c->mm : US_FAR_MM);
+	if (pw_done) {
+		return;
+	}
+	side_mm = ((W)c->mm * app_abs(scan_cos1000(idx))) / 1000;
+	if ((c->r == US_OK) && (c->mm >= US_MIN_VALID_MM) &&
+	    (side_mm < PASS_SIDE_MM) &&
+	    (!pw_seen || (app_abs(side_mm - pw_side0) <= PASS_SIDE_TOL_MM))) {
+		if (!pw_seen) {
+			pw_side0 = side_mm;
+			app_log((UB*)"scan: side of the obstacle at %d mm "
+				  "(%d mm to the side)\n", c->mm, pw_side0);
+		}
+		pw_seen = TRUE;
+		pw_gone = 0;
+		pw_last_mm = c->mm;
+		pw_last_path = path;
+	} else if ((c->r != US_NO_ECHO) && pw_seen &&
+		   (++pw_gone >= PASS_GONE_PINGS)) {
+		W ahead = ((W)pw_last_mm * scan_sin1000(idx)) / 1000;
+		W extra = ahead - (W)(path - pw_last_path) +
+			  SCAN_CAR_LEN_MM + PASS_MARGIN_MM;
+
+		scan_pass_extra_mm = (UW)((extra > 0) ? extra : 0);
+		scan_pass_seq++;
+		pw_done = TRUE;
+		app_log((UB*)"scan: obstacle end seen %d mm ahead, "
+			  "%d mm to go\n", ahead, scan_pass_extra_mm);
+	} else if (!pw_seen &&
+		   ((path - pw_start) >= (last_depth_mm
+		   	+ CTRL_BYPASS_BACKUP_MM))) {
+		/* never saw its side: stop at the fixed estimate */
+		scan_pass_extra_mm = 0;
+		scan_pass_seq++;
+		pw_done = TRUE;
+		app_log((UB*)"scan: side of the obstacle not seen, "
+			  "using the estimate\n");
+	} else {
+		/* keep watching */
+	}
+}
+
+/* GUARD: the bypass legs must not run into anything */
+LOCAL void scan_guard_step(SCAN_CTX *c)
+{
+	c->r = ping_at(SERVO_CENTRE_IDX, &c->mm);
+	set_state(SC_GUARD, (c->r == US_OK) ? c->mm : US_FAR_MM);
+	if ((c->r == US_OK) && (c->mm < GUARD_MIN_MM)) {
+		if ((++c->confirm >= 2) && !c->guard_sent) {
+			c->guard_sent = TRUE;
+			send_kind(OB_CLEARANCE_LOST);
+		}
+	} else {
+		c->confirm = 0;
+	}
+}
+
+/* Obstacle bypass: sweep, then watch the side while passing, or guard
+   the other legs */
+LOCAL void scan_bypass_step(SCAN_CTX *c)
+{
+	c->alerted = FALSE;
+	c->confirm = 0;
+	glance_clear();
+	if (!c->swept || (scan_rescan_request != c->last_req)) {
+		/* first sweep after an alert decides if it is real; a rescan
+		   after reversing is already confirmed */
+		do_sweep(!c->swept);
+		c->last_req = scan_rescan_request;
+		c->swept = TRUE;
+		c->guard_sent = FALSE;
+	} else if (scan_pass_watch != 0U) {
+		scan_pass_watch_step(c);
+	} else {
+		pw_on = FALSE;	/* no pass watch: the next one starts fresh */
+		scan_guard_step(c);
+	}
+}
+
+/* Not moving: no watch pings (resource use, 1.0) */
+LOCAL void scan_idle_step(SCAN_CTX *c)
+{
+	c->alerted = FALSE;
+	c->swept = FALSE;
+	c->confirm = 0;
+	glance_clear();
+	if (servo_idx != SERVO_CENTRE_IDX) {
+		drv_servo_set_idx(SERVO_CENTRE_IDX);
+		servo_idx = SERVO_CENTRE_IDX;
+	}
+	if (scan_bench_on != 0U) {
+		c->r = ping_at(SERVO_CENTRE_IDX, &c->mm);
+		scan_bench_word = ((UW)c->r << 16) | (c->mm & 0xFFFFU);
+		scan_bench_seq++;
+		set_state(SC_IDLE, (c->r == US_OK) ? c->mm : US_FAR_MM);
+	} else {
+		/* Parked: a slow ping (5 Hz) so the dashboard can show the
+		   distance ahead; the result is display only */
+		tk_dly_tsk(150);
+		c->r = drv_us_ping(&c->mm);
+		set_state(SC_IDLE, (c->r == US_OK) ? c->mm :
+			  ((c->r == US_FAR) ? US_FAR_MM : 0U));
+	}
+}
+
 EXPORT void scan_task(INT stacd, void *exinf)
 {
+	SCAN_CTX	c = {0};
 	MISSION_STATE	ms;
-	T_RFLG		rflg;
-	UW		mm = 0;
-	US_RESULT	r;
-	INT		confirm = 0;
-	INT		noecho = 0;
-	BOOL		alerted = FALSE;
-	BOOL		swept = FALSE;
-	BOOL		paused = FALSE;
-	BOOL		guard_sent = FALSE;
-	UW		pause_start = 0;
-	UW		last_req;
-	UW		last_state = 0xFFU;
 
 	(void)stacd; (void)exinf;
 
+	c.last_state = 0xFFU;
 	drv_servo_init();
 	if (drv_us_init() < E_OK) {
 		app_log((UB*)"scan: ECHO interrupt not available\n");
 	}
-	last_req = scan_rescan_request;
+	c.last_req = scan_rescan_request;
 
 	while (1) {
 		if (scan_hold != 0U) {
@@ -304,180 +545,13 @@ EXPORT void scan_task(INT stacd, void *exinf)
 		case VS_LINE_FOLLOWING:
 		case VS_BARCODE_MANOEUVRE:
 		case VS_HUMP_CROSSING:
-			swept = FALSE;
-			guard_sent = FALSE;
-			(void)tk_ref_flg(flg_sys, &rflg);
-			if ((rflg.flgptn & EVF_HUMP_ACTIVE) != 0U) {
-				if (!paused) {
-					paused = TRUE;
-					pause_start = motion_odo_path_01mm / 10U;
-				}
-				if (((motion_odo_path_01mm / 10U) - pause_start) < HUMP_IGNORE_MAX_MM) {
-					/* the sensor may be seeing the hump itself */
-					set_state(SC_PAUSED_HUMP, 0);
-					confirm = 0;
-					glance_clear();
-					tk_dly_tsk(S5_SCAN_PERIOD_MS);
-					break;
-				}
-			} else {
-				paused = FALSE;
-			}
-
-			if (ms.state != last_state) {
-				glance_clear();		/* new state (turned, etc.): forget */
-				last_state = ms.state;
-			}
-			{
-				UINT	gidx = (UINT)((INT)SERVO_CENTRE_IDX + glance_seq[glance_i]);
-				W	path = (W)(motion_odo_path_01mm / 10U);
-				W	pred;
-
-				glance_i = (glance_i + 1U) % GLANCE_SEQ_N;
-				glance_no++;
-				r = glance_ping(gidx, &mm);
-				if (r == US_OK) {
-					W	side = ((W)mm * scan_cos1000(gidx)) / 1000;	/* + = right */
-					W	ahead = ((W)mm * scan_sin1000(gidx)) / 1000;
-
-					noecho = 0;
-					set_state(SC_WATCHING, mm);
-					/* Below US_MIN_VALID_MM the HC-SR04 is not reliable
-					   (its own bracket, wires, ringing): ignored */
-					if (SCAN_ENABLE && (mm >= US_MIN_VALID_MM) &&
-					    (ahead < GLANCE_LOOK_MM) &&
-					    (APP_ABS(side) <= (SCAN_CAR_HALF_W_MM + SCAN_MARGIN_MM))) {
-						gmem_add(&gmem, path, ahead, side, glance_no);
-					}
-				} else if (r == US_FAR) {
-					noecho = 0;
-					set_state(SC_WATCHING, US_FAR_MM);
-				} else {
-					/* no echo: no information */
-					if (++noecho == NO_ECHO_LIMIT) {
-						app_report_fault(FLT_NO_ECHO);	/* reported, latched */
-						app_log((UB*)"scan: no echo x3\n");
-					}
-				}
-				/* Stop when a remembered (seen twice) object is
-				   predicted at the stop distance, even if the beam
-				   has moved off it */
-				path = (W)(motion_odo_path_01mm / 10U);
-				pred = gmem_ahead(&gmem, path, glance_no);
-				if ((pred != GMEM_NONE) && (pred < SCAN_STOP_DIST_MM) && !alerted) {
-					alerted = TRUE;
-					confirm = 2;
-					send_kind(OB_ALERT);
-					app_log((UB*)"scan: something %d mm ahead (servo now %d deg), stopping to check\n",
-						  pred, SERVO_IDX_TO_DEG(gidx));
-				}
-			}
+			scan_watch_step(&c, &ms);
 			break;
-
 		case VS_OBSTACLE_BYPASS:
-			alerted = FALSE;
-			confirm = 0;
-			glance_clear();
-			if (!swept || (scan_rescan_request != last_req)) {
-				/* first sweep after an alert decides if it is real;
-				   a rescan after reversing is already confirmed */
-				do_sweep(!swept);
-				last_req = scan_rescan_request;
-				swept = TRUE;
-				guard_sent = FALSE;
-				break;
-			}
-			/* 31 Oct: PASS leg: watch the obstacle's side go by.  The
-			   beam looks SCAN_PASS_LOOK_DEG, so a hit at d mm is
-			   d x sin(angle) ahead of the sensor.  When it stops
-			   echoing, its back end was last seen there: drive that
-			   far, plus the car length and a margin, then turn in. */
-			if (scan_pass_watch != 0U) {
-				UINT		idx = scan_pass_watch - 1U;
-				UW		path = motion_odo_path_01mm / 10U;
-
-				if (!pw_on) {
-					pw_on = TRUE;
-					pw_seen = FALSE;
-					pw_done = FALSE;
-					pw_gone = 0;
-					pw_start = path;
-				}
-				r = ping_at(idx, &mm);
-				set_state(SC_GUARD, (r == US_OK) ? mm : US_FAR_MM);
-				if (pw_done) {
-					break;
-				}
-				if ((r == US_OK) && (mm >= US_MIN_VALID_MM) &&
-				    ((((W)mm * APP_ABS(scan_cos1000(idx))) / 1000) < PASS_SIDE_MM) &&
-				    (!pw_seen ||
-				     (APP_ABS((((W)mm * APP_ABS(scan_cos1000(idx))) / 1000) - pw_side0) <= PASS_SIDE_TOL_MM))) {
-					if (!pw_seen) {
-						pw_side0 = ((W)mm * APP_ABS(scan_cos1000(idx))) / 1000;
-						app_log((UB*)"scan: side of the obstacle at %d mm (%d mm to the side)\n",
-							  mm, pw_side0);
-					}
-					pw_seen = TRUE;
-					pw_gone = 0;
-					pw_last_mm = mm;
-					pw_last_path = path;
-				} else if ((r != US_NO_ECHO) && pw_seen && (++pw_gone >= PASS_GONE_PINGS)) {
-					W ahead = ((W)pw_last_mm * scan_sin1000(idx)) / 1000;
-					W extra = ahead - (W)(path - pw_last_path) +
-						  SCAN_CAR_LEN_MM + PASS_MARGIN_MM;
-
-					scan_pass_extra_mm = (UW)((extra > 0) ? extra : 0);
-					scan_pass_seq++;
-					pw_done = TRUE;
-					app_log((UB*)"scan: obstacle end seen %d mm ahead, %d mm to go\n",
-						  ahead, scan_pass_extra_mm);
-				} else if (!pw_seen &&
-					   ((path - pw_start) >= (last_depth_mm + CTRL_BYPASS_BACKUP_MM))) {
-					/* never saw its side: stop at the fixed estimate */
-					scan_pass_extra_mm = 0;
-					scan_pass_seq++;
-					pw_done = TRUE;
-					app_log((UB*)"scan: side of the obstacle not seen, using the estimate\n");
-				}
-				break;
-			}
-			pw_on = FALSE;	/* no pass watch: the next one starts fresh */
-			/* GUARD: the bypass legs must not run into anything */
-			r = ping_at(SERVO_CENTRE_IDX, &mm);
-			set_state(SC_GUARD, (r == US_OK) ? mm : US_FAR_MM);
-			if ((r == US_OK) && (mm < GUARD_MIN_MM)) {
-				if ((++confirm >= 2) && !guard_sent) {
-					guard_sent = TRUE;
-					send_kind(OB_CLEARANCE_LOST);
-				}
-			} else {
-				confirm = 0;
-			}
+			scan_bypass_step(&c);
 			break;
-
 		default:
-			/* Not moving: no pings (resource use, 1.0) */
-			alerted = FALSE;
-			swept = FALSE;
-			confirm = 0;
-			glance_clear();
-			if (servo_idx != SERVO_CENTRE_IDX) {
-				drv_servo_set_idx(SERVO_CENTRE_IDX);
-				servo_idx = SERVO_CENTRE_IDX;
-			}
-			if (scan_bench_on != 0U) {
-				r = ping_at(SERVO_CENTRE_IDX, &mm);
-				scan_bench_word = ((UW)r << 16) | (mm & 0xFFFFU);
-				scan_bench_seq++;
-				set_state(SC_IDLE, (r == US_OK) ? mm : US_FAR_MM);
-			} else {
-				/* Parked: a slow ping (5 Hz) so the dashboard can show
-				   the distance ahead; the result is display only */
-				tk_dly_tsk(150);
-				r = drv_us_ping(&mm);
-				set_state(SC_IDLE, (r == US_OK) ? mm :
-					  ((r == US_FAR) ? US_FAR_MM : 0U));
-			}
+			scan_idle_step(&c);
 			break;
 		}
 	}

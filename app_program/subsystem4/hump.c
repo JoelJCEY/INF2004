@@ -98,14 +98,16 @@ EXPORT HUMP_EVENT hump_update(HUMP_DET *h, W dh_um, UW path_01mm, W *peak_um)
 	}
 
 	if (!extend_profile(h, dh_um, path_01mm)) {
-		hump_reset(h);		/* longer than the profile: not a hump */
+		/* longer than the profile: not a hump */
+		hump_reset(h);
 		return HE_DISCARD;
 	}
 	hf = current_height(h);
 
 	switch (h->state) {
 	case HS_CLIMBING:
-		if ((path_01mm - h->start_01mm) > (UW)(HUMP_MAX_CLIMB_MM * 10)) {
+		if ((path_01mm - h->start_01mm) >
+		    (UW)(HUMP_MAX_CLIMB_MM * 10)) {
 			hump_reset(h);
 			return HE_DISCARD;	/* ramp or bad reading */
 		}
@@ -115,11 +117,13 @@ EXPORT HUMP_EVENT hump_update(HUMP_DET *h, W dh_um, UW path_01mm, W *peak_um)
 			break;
 		}
 		/* Level-return exit: a trigger that never formed a peak */
-		if ((APP_ABS(dh_um) < HUMP_EXIT_UM) && (h->peak_um < HUMP_PEAK_DROP_UM)) {
+		if ((app_abs(dh_um) < HUMP_EXIT_UM) &&
+		    (h->peak_um < HUMP_PEAK_DROP_UM)) {
 			if (!h->level_run) {
 				h->level_run = TRUE;
 				h->level_01mm = path_01mm;
-			} else if ((path_01mm - h->level_01mm) >= (UW)(HUMP_FALSE_LEVEL_MM * 10)) {
+			} else if ((path_01mm - h->level_01mm) >=
+				   (UW)(HUMP_FALSE_LEVEL_MM * 10)) {
 				hump_reset(h);
 				return HE_DISCARD;
 			} else {
@@ -137,8 +141,9 @@ EXPORT HUMP_EVENT hump_update(HUMP_DET *h, W dh_um, UW path_01mm, W *peak_um)
 		break;
 	case HS_REAR_CROSSING:
 		/* Rear wheels cross; report once they are past and level */
-		if (((path_01mm - h->mark_01mm) >= (UW)((HUMP_WHEELBASE_MM + 20) * 10)) &&
-		    (APP_ABS(dh_um) < HUMP_EXIT_UM)) {
+		if (((path_01mm - h->mark_01mm) >= (UW)((HUMP_WHEELBASE_MM
+			+ 20) * 10)) &&
+		    (app_abs(dh_um) < HUMP_EXIT_UM)) {
 			*peak_um = h->peak_um;
 			hump_reset(h);
 			return HE_END;

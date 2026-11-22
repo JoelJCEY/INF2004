@@ -36,13 +36,15 @@ EXPORT VEHICLE_STATE ctrl_on_command(VEHICLE_STATE s, REMOTE_CMD c)
 		return ctrl_is_active(s) ? VS_STOPPED : s;
 	case RC_START:
 		/* Rejected until INITIALISING is complete, and in FAULT STOP */
-		return ((s == VS_READY) || (s == VS_STOPPED)) ? VS_LINE_FOLLOWING : s;
+		return ((s == VS_READY) || (s == VS_STOPPED))
+			? VS_LINE_FOLLOWING : s;
 	case RC_RESET:
 		/* FAULT STOP re-runs the start-up checks; others go READY */
 		if (s == VS_FAULT_STOP) {
 			return VS_INITIALISING;
 		}
-		if ((s == VS_STOPPED) || (s == VS_MISSION_COMPLETE) || (s == VS_READY)) {
+		if ((s == VS_STOPPED) || (s == VS_MISSION_COMPLETE) ||
+			(s == VS_READY)) {
 			return VS_READY;
 		}
 		return s;
@@ -73,7 +75,8 @@ EXPORT VEHICLE_STATE ctrl_on_faults(VEHICLE_STATE s, UINT faults)
 	}
 	if (((faults & FLT_LINE_LOST) != 0U) &&
 	    ((s == VS_LINE_FOLLOWING) || (s == VS_HUMP_CROSSING))) {
-		/* Not while barcode turns or the bypass leave the line on purpose */
+		/* Not while barcode turns or the bypass leave the line on
+		   purpose */
 		return VS_STOPPED;
 	}
 	return s;	/* NO_ECHO, WIFI: reported only */
@@ -152,7 +155,7 @@ EXPORT INT ctrl_plan_junction(BARCODE_CMD cmd, W past_mm, CTRL_STEP *st)
 		return 0;	/* forward / not in the map: straight on */
 	}
 	/* bring the wheel axle over the middle of the junction */
-	if (APP_ABS(move) > CTRL_JUNCTION_DEADBAND_MM) {
+	if (app_abs(move) > CTRL_JUNCTION_DEADBAND_MM) {
 		st[n].op = STEP_MOVE;
 		st[n].arg = move;	/* + forward, - backward */
 		n++;

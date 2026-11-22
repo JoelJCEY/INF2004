@@ -30,8 +30,10 @@
  * --------------------------------------------------------------------- */
 #define FF_OFFSET_PERMILLE	150	/* overcomes static friction     */
 #define FF_PERMILLE_PER_M_S	1500	/* duty per 1 m/s                */
-#define LOST_SPIN_MM_S		60	/* wheel speed when spinning back to the line */
-#define SYNC_DEADBAND		13	/* counts, ~1 mm: L/R difference ignored (31 Oct) */
+/* wheel speed when spinning back to the line */
+#define LOST_SPIN_MM_S		60
+/* counts, ~1 mm: L/R difference ignored (31 Oct) */
+#define SYNC_DEADBAND		13
 /* Each wheel has its own speed PI while following. Steering changes the
    wheel speed ratio, rather than subtracting raw PWM from the inner wheel. */
 #define FOLLOW_SYNC_LOG_MS 1000
@@ -54,7 +56,8 @@
 #define STOP_TIMEOUT_TICKS	50	/* 1 s */
 
 #define ENC_CHECK_DUTY		300	/* both wheels driven above this  */
-#define ENC_CHECK_MIN_COUNTS	(20000 / MOTION_UM_PER_COUNT)	/* other wheel moved >= 20 mm */
+/* other wheel moved >= 20 mm */
+#define ENC_CHECK_MIN_COUNTS	(20000 / MOTION_UM_PER_COUNT)
 /* From counts alone a blocked wheel and a dead encoder look the same.
    The stall rule (300 ms) therefore reports a blocked wheel first; this
    longer window only catches what the stall rule cannot see.  The exact
@@ -63,7 +66,8 @@
 
 #define SELFTEST_DUTY		400
 #define SELFTEST_TICKS		10	/* 200 ms per step                */
-#define SELFTEST_MIN_COUNTS	(10000 / MOTION_UM_PER_COUNT)	/* >= 10 mm forward */
+/* >= 10 mm forward */
+#define SELFTEST_MIN_COUNTS	(10000 / MOTION_UM_PER_COUNT)
 
 /* ---------------------------------------------------------------------
  *  Published words (IF-07): motion_task is the only writer
@@ -107,7 +111,8 @@ LOCAL MOTION_CTX	mc;
 LOCAL MOTION_PID	pid_speed;	/* common mode: speed            */
 LOCAL MOTION_PID	pid_follow[2];	/* independent wheel speed loops */
 LOCAL MOTION_PID	pid_sync;	/* differential: L/R count sync  */
-LOCAL MOTION_STALL	stall[2];	/* per wheel: one blocked wheel is a stall */
+/* per wheel: one blocked wheel is a stall */
+LOCAL MOTION_STALL	stall[2];
 
 LOCAL W		cnt_l, cnt_r;		/* latest counts (sign-corrected) */
 LOCAL W		hist_l[SPEED_AVG_TICKS];
@@ -205,7 +210,8 @@ LOCAL void measure(void)
 	v_l = (sum_l * MOTION_UM_PER_COUNT) / (SPEED_AVG_TICKS * S2_PERIOD_MS);
 	v_r = (sum_r * MOTION_UM_PER_COUNT) / (SPEED_AVG_TICKS * S2_PERIOD_MS);
 
-	path_um += (UW)(((APP_ABS(d_l) + APP_ABS(d_r)) * MOTION_UM_PER_COUNT) / 2);
+	path_um += (UW)(((app_abs(d_l)
+		+ app_abs(d_r)) * MOTION_UM_PER_COUNT) / 2);
 
 	/* Publish: each a single aligned 32-bit store (10.4 rule 1) */
 	motion_enc_count[0] = cnt_l;
@@ -214,11 +220,11 @@ LOCAL void measure(void)
 	motion_odo_path_01mm = path_um / 100U;
 
 	/* Window for the runtime encoder rule (5.1 encoder fault) */
-	if ((APP_ABS(mc.duty_l) >= ENC_CHECK_DUTY) &&
-	    (APP_ABS(mc.duty_r) >= ENC_CHECK_DUTY)) {
+	if ((app_abs(mc.duty_l) >= ENC_CHECK_DUTY) &&
+	    (app_abs(mc.duty_r) >= ENC_CHECK_DUTY)) {
 		enc_window++;
-		enc_sum_l += APP_ABS(d_l);
-		enc_sum_r += APP_ABS(d_r);
+		enc_sum_l += app_abs(d_l);
+		enc_sum_r += app_abs(d_r);
 	} else {
 		enc_window = 0;
 		enc_sum_l = 0;
@@ -242,7 +248,7 @@ LOCAL void handle_cmd(const MOTION_CMD *cmd)
 {
 	W	speed = (cmd->speed_mm_s != 0U) ? (W)cmd->speed_mm_s : 0;
 
-	speed = APP_CLAMP(speed, 0, MOTION_MAX_MM_S);
+	speed = app_clamp(speed, 0, MOTION_MAX_MM_S);
 
 	/* Commands that are accepted in every mode */
 	switch (cmd->op) {
@@ -282,7 +288,7 @@ LOCAL void handle_cmd(const MOTION_CMD *cmd)
 	case MC_MOVE:
 		set_mode(MM_IDLE);	/* force a clean restart of the PIDs */
 		set_mode(MM_MOVE);
-		start_measured(motion_mm_to_counts(APP_ABS(cmd->arg)),
+		start_measured(motion_mm_to_counts(app_abs(cmd->arg)),
 			       (cmd->arg >= 0) ? 1 : -1,
 			       (speed != 0) ? speed : MOTION_MOVE_MM_S);
 		break;
@@ -327,7 +333,7 @@ LOCAL INT common_duty(W v_meas)
 	/* A magnitude controller must never reverse the requested direction. */
 	INT duty = feedforward(mc.v_set) +
 	       (INT)motion_pid_step(&pid_speed, mc.v_set - v_meas);
-	return APP_CLAMP(duty, 0, MOTOR_DUTY_MAX);
+	return app_clamp(duty, 0, MOTOR_DUTY_MAX);
 }
 
 /* Move cur toward tgt by at most step */
@@ -345,12 +351,108 @@ LOCAL INT step_toward(INT cur, INT tgt, INT step)
 /* Gradual steering: forward and steering parts slewed, then the duties */
 LOCAL void follow_output(INT fwd_target, INT steer_target)
 {
-	INT steer_step = (APP_ABS(steer_target) < APP_ABS(mc.steer)) ?
+	INT steer_step = (app_abs(steer_target) < app_abs(mc.steer)) ?
 		STEER_EXIT_PER_TICK : STEER_ENTER_PER_TICK;
 	mc.fwd = step_toward(mc.fwd, fwd_target, STEER_SLEW_PER_TICK);
 	mc.steer = step_toward(mc.steer, steer_target, steer_step);
 	mc.duty_l = mc.fwd - mc.steer;
 	mc.duty_r = mc.fwd + mc.steer;
+}
+
+/* Line lost (line_task sends the full error): spin on the spot toward
+   the side the line was last seen, so the car turns back at once
+   instead of driving a wide circle (28 Oct) */
+LOCAL void follow_lost_spin(void)
+{
+	INT	dir = (mc.line_err > 0) ? 1 : -1;	/* +1 = left */
+	INT	common;
+
+	if (!mc.searching) {
+		motion_pid_reset(&pid_speed);
+		motion_pid_reset(&pid_follow[0]);
+		motion_pid_reset(&pid_follow[1]);
+		mc.follow_v[0] = mc.follow_v[1] = 0;
+		mc.searching = TRUE;
+	}
+
+	/* jump straight to spin speed: react at once */
+	mc.v_set = limited(LOST_SPIN_MM_S);
+	common = common_duty((app_abs(v_l) + app_abs(v_r)) / 2);
+	/* spin = no forward part, all steering: reached gradually */
+	follow_output(0, dir * common);
+}
+
+/* 40 ms low-pass of the line error: reject DO steps and avoid
+   derivative kicks */
+LOCAL void follow_filter(void)
+{
+	if (mc.line_err == 0 && mc.line_filtered > 0) {
+		/* A left arc is inferred from temporary loss of C/R. On
+		   reacquisition, ease that curvature out rather than cancelling
+		   it in one tick and accelerating the inner wheel abruptly. */
+		mc.line_filtered -= (mc.line_filtered + 3) / 4;
+	} else {
+		mc.line_filtered += (mc.line_err - mc.line_filtered) / 2;
+	}
+	if (app_abs(mc.line_filtered) < 12) {
+		mc.line_filtered = 0;
+	}
+	if (mc.line_err == 0 && mc.line_filtered < 0) {
+		/* The centre is back on the line or a crossing requests
+		   straight.
+		   Remove the old turn request; wheel targets and PWM still
+		   ramp.
+		   Keep each speed integrator so motor imbalance stays
+		   corrected. */
+		mc.line_filtered = 0;
+	}
+}
+
+/* The outer wheel sets the pace. Inner wheel target remains forward,
+   even at the strongest normal correction: a rolling arc, not a pivot.
+   Each wheel: feed-forward + PI on its own speed. */
+LOCAL void follow_wheel_duties(UW now, INT *common, INT *diff)
+{
+	W outer;
+	W inner;
+	W target[2];
+	W measured[2] = {v_l, v_r};
+	INT duty[2];
+	UINT i;
+
+	mc.v_set = motion_ramp(mc.v_set,
+		(limited(mc.cruise) * (3000
+			- app_abs(mc.line_filtered))) / 3000,
+		ACCEL_MM_S_PER_TICK);
+	outer = mc.v_set;
+	inner = (outer * (1000 - app_abs(mc.line_filtered))) / 1000;
+	measured[1] = (measured[1] * MOTION_SYNC_R_X1000) / 1000;
+	/* Avoid targets too low for continuous wheel rotation. */
+	if (outer >= 20 && inner < 20) {
+		inner = 20;
+	}
+	target[0] = (mc.line_filtered > 0) ? inner : outer;
+	target[1] = (mc.line_filtered < 0) ? inner : outer;
+	for (i = 0; i < 2; i++) {
+		mc.follow_v[i] = motion_ramp(mc.follow_v[i], target[i],
+					     FOLLOW_WHEEL_RAMP);
+		duty[i] = feedforward(mc.follow_v[i]) +
+			(INT)motion_pid_step(&pid_follow[i],
+					     mc.follow_v[i] - measured[i]);
+		duty[i] = app_clamp(duty[i], 0, MOTOR_DUTY_MAX);
+	}
+	*common = (duty[0] + duty[1]) / 2;
+	*diff = (duty[1] - duty[0]) / 2;
+#if FOLLOW_SYNC_LOG_MS > 0
+	if ((now - mc.log_ms) >= FOLLOW_SYNC_LOG_MS) {
+		mc.log_ms = now;
+		app_log((UB*)"motion: follow speed L %d R %d mm/s "
+			"target L %d R %d\n",
+			v_l, v_r, mc.follow_v[0], mc.follow_v[1]);
+	}
+#else
+	(void)now;
+#endif
 }
 
 LOCAL void run_follow(void)
@@ -365,24 +467,8 @@ LOCAL void run_follow(void)
 		mc.line_err = line_unpack_err(w);
 	}	/* else hold the last value (F6: never wait for line_task) */
 
-	/* Line lost (line_task sends the full error): spin on the spot
-	   toward the side the line was last seen, so the car turns back
-	   at once instead of driving a wide circle (28 Oct) */
-	if (APP_ABS(mc.line_err) >= LINE_ERR_MAX) {
-		INT	dir = (mc.line_err > 0) ? 1 : -1;	/* +1 = left */
-		if (!mc.searching) {
-			motion_pid_reset(&pid_speed);
-			motion_pid_reset(&pid_follow[0]);
-			motion_pid_reset(&pid_follow[1]);
-			mc.follow_v[0] = mc.follow_v[1] = 0;
-			mc.searching = TRUE;
-		}
-
-		/* jump straight to spin speed: react at once */
-		mc.v_set = limited(LOST_SPIN_MM_S);
-		common = common_duty((APP_ABS(v_l) + APP_ABS(v_r)) / 2);
-		/* spin = no forward part, all steering: reached gradually */
-		follow_output(0, dir * common);
+	if (app_abs(mc.line_err) >= LINE_ERR_MAX) {
+		follow_lost_spin();
 		return;
 	}
 	if (mc.searching) {
@@ -392,61 +478,17 @@ LOCAL void run_follow(void)
 		mc.line_filtered = 0;
 		mc.searching = FALSE;
 	}
-	/* 40 ms low-pass: reject DO steps and avoid derivative kicks. */
-	if (mc.line_err == 0 && mc.line_filtered > 0) {
-		/* A left arc is inferred from temporary loss of C/R. On
-		   reacquisition, ease that curvature out rather than cancelling
-		   it in one tick and accelerating the inner wheel abruptly. */
-		mc.line_filtered -= (mc.line_filtered + 3) / 4;
-	} else {
-		mc.line_filtered += (mc.line_err - mc.line_filtered) / 2;
-	}
-	if (APP_ABS(mc.line_filtered) < 12) mc.line_filtered = 0;
-	if (mc.line_err == 0 && mc.line_filtered < 0) {
-		/* The centre is back on the line or a crossing requests straight.
-		   Remove the old turn request; wheel targets and PWM still ramp.
-		   Keep each speed integrator so motor imbalance stays corrected. */
-		mc.line_filtered = 0;
-	}
-
-	/* The outer wheel sets the pace. Inner wheel target remains forward,
-	   even at the strongest normal correction: a rolling arc, not a pivot. */
-	mc.v_set = motion_ramp(mc.v_set,
-		(limited(mc.cruise) * (3000 - APP_ABS(mc.line_filtered))) / 3000,
-		ACCEL_MM_S_PER_TICK);
-	{
-		W outer = mc.v_set;
-		W inner = (outer * (1000 - APP_ABS(mc.line_filtered))) / 1000;
-		W target[2];
-		W measured[2] = {v_l, v_r};
-		INT duty[2];
-		UINT i;
-		measured[1] = (measured[1] * MOTION_SYNC_R_X1000) / 1000;
-		/* Avoid targets too low for continuous wheel rotation. */
-		if (outer >= 20 && inner < 20) inner = 20;
-		target[0] = (mc.line_filtered > 0) ? inner : outer;
-		target[1] = (mc.line_filtered < 0) ? inner : outer;
-		for (i = 0; i < 2; i++) {
-			mc.follow_v[i] = motion_ramp(mc.follow_v[i], target[i], FOLLOW_WHEEL_RAMP);
-			duty[i] = feedforward(mc.follow_v[i]) +
-				(INT)motion_pid_step(&pid_follow[i], mc.follow_v[i] - measured[i]);
-			duty[i] = APP_CLAMP(duty[i], 0, MOTOR_DUTY_MAX);
-		}
-		common = (duty[0] + duty[1]) / 2;
-		diff = (duty[1] - duty[0]) / 2;
-#if FOLLOW_SYNC_LOG_MS > 0
-		if ((now - mc.log_ms) >= FOLLOW_SYNC_LOG_MS) {
-			mc.log_ms = now;
-			app_log((UB*)"motion: follow speed L %d R %d mm/s target L %d R %d\n",
-				v_l, v_r, mc.follow_v[0], mc.follow_v[1]);
-		}
-#endif
-	}
+	follow_filter();
+	follow_wheel_duties(now, &common, &diff);
 	follow_output(common, diff);
 	/* Separate forward/steering ramps can briefly disagree on spin exit.
 	   Normal line following must never command a reverse wheel. */
-	if (mc.duty_l < 0) mc.duty_l = 0;
-	if (mc.duty_r < 0) mc.duty_r = 0;
+	if (mc.duty_l < 0) {
+		mc.duty_l = 0;
+	}
+	if (mc.duty_r < 0) {
+		mc.duty_r = 0;
+	}
 }
 
 /* MOVE and TURN share the same structure.  TURN: dir +1 = left (CCW):
@@ -471,7 +513,8 @@ LOCAL void run_measured(BOOL turning)
 	}
 
 	mc.v_set = motion_ramp(mc.v_set,
-			       motion_decel_speed(limited(mc.cruise), remaining),
+			       motion_decel_speed(limited(mc.cruise),
+			       	remaining),
 			       ACCEL_MM_S_PER_TICK);
 	if (turning) {
 		v_meas = ((v_r - v_l) / 2) * mc.dir;
@@ -507,7 +550,8 @@ LOCAL void run_stopping(void)
 {
 	mc.duty_l = 0;
 	mc.duty_r = 0;
-	if ((APP_ABS(v_l) < STOP_SPEED_MM_S) && (APP_ABS(v_r) < STOP_SPEED_MM_S)) {
+	if ((app_abs(v_l) < STOP_SPEED_MM_S) &&
+		(app_abs(v_r) < STOP_SPEED_MM_S)) {
 		mc.settle++;
 	} else {
 		mc.settle = 0;
@@ -532,7 +576,8 @@ LOCAL void run_selftest(void)
 		if (mc.timer >= SELFTEST_TICKS) {
 			if ((cnt_l - mc.st_ref) < SELFTEST_MIN_COUNTS) {
 				mc.st_ok = FALSE;
-				app_log((UB*)"motion: selftest LEFT %d counts\n",
+				app_log((UB*)"motion: selftest LEFT %d "
+					     "counts\n",
 					  cnt_l - mc.st_ref);
 			}
 			mc.st_step = 1;
@@ -551,7 +596,8 @@ LOCAL void run_selftest(void)
 		if (mc.timer >= SELFTEST_TICKS) {
 			if ((cnt_r - mc.st_ref) < SELFTEST_MIN_COUNTS) {
 				mc.st_ok = FALSE;
-				app_log((UB*)"motion: selftest RIGHT %d counts\n",
+				app_log((UB*)"motion: selftest RIGHT %d "
+					     "counts\n",
 					  cnt_r - mc.st_ref);
 			}
 			mc.st_step = 3;
@@ -584,21 +630,25 @@ LOCAL BOOL check_faults(void)
 	   well below it */
 	INT	drive_floor = (feedforward(mc.v_set) * 3) / 4;
 
-	if ((mc.mode != MM_FOLLOW) && (mc.mode != MM_MOVE) && (mc.mode != MM_TURN)) {
+	if ((mc.mode != MM_FOLLOW) && (mc.mode != MM_MOVE) &&
+		(mc.mode != MM_TURN)) {
 		return FALSE;
 	}
 	/* Rule applied to each wheel against the common setpoint: with one
 	   wheel blocked the AVERAGE speed never falls below 20 %. */
 	/* A wheel only counts as commanded while it is driven at least as
-	   hard as (3/4 of) cruise: the inside wheel of a line correction or a slow
+	   hard as (3/4 of) cruise: the inside wheel of a line correction or a
+	   slow
 	   hump crossing is meant to be slow and must not trip the rule. */
 	stall_l = motion_stall_update(&stall[0],
-		(APP_ABS(mc.duty_l) >= drive_floor) ? mc.v_set : 0, v_l);
+		(app_abs(mc.duty_l) >= drive_floor) ? mc.v_set : 0, v_l);
 	stall_r = motion_stall_update(&stall[1],
-		(APP_ABS(mc.duty_r) >= drive_floor) ? mc.v_set : 0, v_r);
+		(app_abs(mc.duty_r) >= drive_floor) ? mc.v_set : 0, v_r);
 	if (stall_l || stall_r) {
-		app_log((UB*)"motion: STALL %s wheel: set %d mm/s, measured L %d R %d mm/s, duty L %d R %d\n",
-			(stall_l && stall_r) ? "BOTH" : (stall_l ? "LEFT" : "RIGHT"),
+		app_log((UB*)"motion: STALL %s wheel: set %d mm/s, measured "
+			     "L %d R %d mm/s, duty L %d R %d\n",
+			(stall_l && stall_r)
+				? "BOTH" : (stall_l ? "LEFT" : "RIGHT"),
 			mc.v_set, v_l, v_r, mc.duty_l, mc.duty_r);
 		lock_motors(MS_STALL, FLT_STALL);
 		return TRUE;
@@ -606,8 +656,10 @@ LOCAL BOOL check_faults(void)
 	if (enc_window >= ENC_CHECK_TICKS) {
 		if (((enc_sum_l == 0) && (enc_sum_r >= ENC_CHECK_MIN_COUNTS)) ||
 		    ((enc_sum_r == 0) && (enc_sum_l >= ENC_CHECK_MIN_COUNTS))) {
-			app_log((UB*)"motion: ENCODER %s silent: counts in 1 s L %d R %d\n",
-				(enc_sum_l == 0) ? "LEFT" : "RIGHT", enc_sum_l, enc_sum_r);
+			app_log((UB*)"motion: ENCODER %s silent: counts in 1 "
+				     "s L %d R %d\n",
+				(enc_sum_l == 0) ? "LEFT" : "RIGHT",
+					enc_sum_l, enc_sum_r);
 			lock_motors(MS_ENCODER_FAULT, FLT_ENCODER);
 			return TRUE;
 		}
@@ -629,7 +681,7 @@ LOCAL INT slew(INT prev, INT target)
 	if (((target > 0) && (prev < 0)) || ((target < 0) && (prev > 0))) {
 		return 0;			/* reversing: via zero */
 	}
-	if (APP_ABS(target) <= APP_ABS(prev)) {
+	if (app_abs(target) <= app_abs(prev)) {
 		return target;			/* falling: at once */
 	}
 	return (INT)motion_ramp(prev, target, SLEW_PERMILLE_PER_TICK);
@@ -643,11 +695,14 @@ LOCAL void apply_output(void)
 	    (mc.mode == MM_STOPPING)) {
 		out_l = 0;
 		out_r = 0;
-		drv_motor_brake_all();	/* brake, not coast: stays on the line */
+		/* brake, not coast: stays on the line */
+		drv_motor_brake_all();
 		return;
 	}
-	out_l = slew(out_l, APP_CLAMP(mc.duty_l, -MOTOR_DUTY_MAX, MOTOR_DUTY_MAX));
-	out_r = slew(out_r, APP_CLAMP(mc.duty_r, -MOTOR_DUTY_MAX, MOTOR_DUTY_MAX));
+	out_l = slew(out_l,
+		app_clamp(mc.duty_l, -MOTOR_DUTY_MAX, MOTOR_DUTY_MAX));
+	out_r = slew(out_r,
+		app_clamp(mc.duty_r, -MOTOR_DUTY_MAX, MOTOR_DUTY_MAX));
 	drv_motor_set(MOTOR_LEFT, out_l);
 	drv_motor_set(MOTOR_RIGHT, out_r);
 }
@@ -676,7 +731,8 @@ LOCAL void enc_diag(void)
 	pins = (gpio_get_val(2) << 3) | (gpio_get_val(3) << 2) |
 	       (gpio_get_val(4) << 1) | gpio_get_val(5);
 	if ((pins != last_pins) || (cnt_l != last_l) || (cnt_r != last_r)) {
-		app_log((UB*)"enc: L A=%d B=%d  R A=%d B=%d   counts L %d  R %d\n",
+		app_log((UB*)"enc: L A=%d B=%d  R A=%d B=%d   counts L %d  R "
+			     "%d\n",
 			  (pins >> 3) & 1U, (pins >> 2) & 1U, (pins >> 1) & 1U,
 			  pins & 1U, cnt_l, cnt_r);
 		last_pins = pins;
@@ -726,7 +782,7 @@ EXPORT void motion_task(INT stacd, void *exinf)
 		now_us = app_time_us();
 		if (!first) {
 			W d = (W)(now_us - prev_us) - (S2_PERIOD_MS * 1000);
-			jitter = (UW)APP_ABS(d);
+			jitter = (UW)app_abs(d);
 			if (jitter > motion_jitter_max_us) {
 				motion_jitter_max_us = jitter;
 			}
@@ -737,7 +793,8 @@ EXPORT void motion_task(INT stacd, void *exinf)
 		measure();
 		enc_diag();
 
-		while (tk_rcv_mbf(mbf_motion_cmd, &cmd, TMO_POL) == (INT)sizeof(cmd)) {
+		while (tk_rcv_mbf(mbf_motion_cmd, &cmd,
+			TMO_POL) == (INT)sizeof(cmd)) {
 			handle_cmd(&cmd);
 		}
 

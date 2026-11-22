@@ -5,24 +5,28 @@
 
 #include "drv_i2c0.h"
 
-#define I2C0_REG(off)		(0x40044000UL + (off))
-#define IC_CON			I2C0_REG(0x00)
-#define IC_TAR			I2C0_REG(0x04)
-#define IC_DATA_CMD		I2C0_REG(0x10)
-#define IC_FS_SCL_HCNT		I2C0_REG(0x1C)
-#define IC_FS_SCL_LCNT		I2C0_REG(0x20)
-#define IC_INTR_MASK		I2C0_REG(0x30)
-#define IC_RAW_INTR_STAT	I2C0_REG(0x34)
-#define IC_RX_TL		I2C0_REG(0x38)
-#define IC_TX_TL		I2C0_REG(0x3C)
-#define IC_CLR_TX_ABRT		I2C0_REG(0x54)
-#define IC_CLR_STOP_DET		I2C0_REG(0x60)
-#define IC_ENABLE		I2C0_REG(0x6C)
-#define IC_TXFLR		I2C0_REG(0x74)
-#define IC_RXFLR		I2C0_REG(0x78)
-#define IC_SDA_HOLD		I2C0_REG(0x7C)
-#define IC_ENABLE_STATUS	I2C0_REG(0x9C)
-#define IC_FS_SPKLEN		I2C0_REG(0xA0)
+#define I2C0_BASE		0x40044000UL
+/* Pad setting of SDA / SCL.  The kernel's GPIO_* bits are signed
+   (1<<n), so each is made unsigned before they are combined (Barr-C). */
+#define I2C_PAD_BITS		((UW)GPIO_IE | (UW)GPIO_PUE | \
+				 (UW)GPIO_SHEMITT | (UW)GPIO_DRIVE_4MA)
+#define IC_CON			(I2C0_BASE + 0x00UL)
+#define IC_TAR			(I2C0_BASE + 0x04UL)
+#define IC_DATA_CMD		(I2C0_BASE + 0x10UL)
+#define IC_FS_SCL_HCNT		(I2C0_BASE + 0x1CUL)
+#define IC_FS_SCL_LCNT		(I2C0_BASE + 0x20UL)
+#define IC_INTR_MASK		(I2C0_BASE + 0x30UL)
+#define IC_RAW_INTR_STAT	(I2C0_BASE + 0x34UL)
+#define IC_RX_TL		(I2C0_BASE + 0x38UL)
+#define IC_TX_TL		(I2C0_BASE + 0x3CUL)
+#define IC_CLR_TX_ABRT		(I2C0_BASE + 0x54UL)
+#define IC_CLR_STOP_DET		(I2C0_BASE + 0x60UL)
+#define IC_ENABLE		(I2C0_BASE + 0x6CUL)
+#define IC_TXFLR		(I2C0_BASE + 0x74UL)
+#define IC_RXFLR		(I2C0_BASE + 0x78UL)
+#define IC_SDA_HOLD		(I2C0_BASE + 0x7CUL)
+#define IC_ENABLE_STATUS	(I2C0_BASE + 0x9CUL)
+#define IC_FS_SPKLEN		(I2C0_BASE + 0xA0UL)
 
 #define CON_MASTER		(1UL << 0)
 #define CON_SPEED_FAST		(2UL << 1)
@@ -57,9 +61,9 @@ EXPORT void drv_i2c0_init(UINT sda_pin, UINT scl_pin)
 	app_unreset(RESETS_RESET_I2C0);
 
 	out_w(GPIO_CTRL(sda_pin), GPIO_CTRL_FUNCSEL_I2C);
-	out_w(GPIO(sda_pin), GPIO_IE | GPIO_PUE | GPIO_SHEMITT | GPIO_DRIVE_4MA);
+	out_w(GPIO(sda_pin), I2C_PAD_BITS);
 	out_w(GPIO_CTRL(scl_pin), GPIO_CTRL_FUNCSEL_I2C);
-	out_w(GPIO(scl_pin), GPIO_IE | GPIO_PUE | GPIO_SHEMITT | GPIO_DRIVE_4MA);
+	out_w(GPIO(scl_pin), I2C_PAD_BITS);
 
 	i2c_enable(FALSE);
 	out_w(IC_CON, CON_MASTER | CON_SPEED_FAST | CON_RESTART_EN |
@@ -115,20 +119,34 @@ EXPORT ER drv_i2c0_xfer(UB addr, const UB *wbuf, UINT wlen, UB *rbuf, UINT rlen)
 		}
 		out_w(IC_DATA_CMD, cmd);
 		while (in_w(IC_RXFLR) == 0U) {
-			if ((in_w(IC_RAW_INTR_STAT) & RAW_TX_ABRT) != 0U) { er = E_IO; break; }
-			if (timed_out(start)) { er = E_TMOUT; break; }
+			if ((in_w(IC_RAW_INTR_STAT) & RAW_TX_ABRT) != 0U) {
+				er = E_IO;
+				break;
+			}
+			if (timed_out(start)) {
+				er = E_TMOUT;
+				break;
+			}
 		}
 		if (er == E_OK) {
 			rbuf[i] = (UB)(in_w(IC_DATA_CMD) & 0xFFU);
 		}
 	}
 	/* Wait for the STOP (also ends a write-only transfer) */
-	while ((er == E_OK) && ((in_w(IC_RAW_INTR_STAT) & RAW_STOP_DET) == 0U)) {
-		if ((in_w(IC_RAW_INTR_STAT) & RAW_TX_ABRT) != 0U) { er = E_IO; break; }
-		if (timed_out(start)) { er = E_TMOUT; break; }
+	while ((er == E_OK) &&
+	       ((in_w(IC_RAW_INTR_STAT) & RAW_STOP_DET) == 0U)) {
+		if ((in_w(IC_RAW_INTR_STAT) & RAW_TX_ABRT) != 0U) {
+			er = E_IO;
+			break;
+		}
+		if (timed_out(start)) {
+			er = E_TMOUT;
+			break;
+		}
 	}
 	if ((in_w(IC_RAW_INTR_STAT) & RAW_TX_ABRT) != 0U) {
-		er = E_IO;		/* NACK: device missing or wrong address */
+		/* NACK: device missing or wrong address */
+		er = E_IO;
 	}
 	(void)in_w(IC_CLR_TX_ABRT);
 	(void)in_w(IC_CLR_STOP_DET);

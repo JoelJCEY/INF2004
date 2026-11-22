@@ -52,7 +52,8 @@ EXPORT UW app_time_ms(void)
 {
 	SYSTIM	t;
 
-	(void)tk_get_otm(&t);	/* time since power-on (not the calendar clock) */
+	/* time since power-on (not the calendar clock) */
+	(void)tk_get_otm(&t);
 	return t.lo;
 }
 
@@ -91,7 +92,8 @@ EXPORT void app_watchdog_start(UW timeout_ms)
 		load = 0x00FFFFFFUL;
 	}
 	wdt_load = load;
-	out_w(PSM_WDSEL, PSM_WDSEL_ALL_BUT_OSC);	/* reset all but clocks */
+	/* reset all but clocks */
+	out_w(PSM_WDSEL, PSM_WDSEL_ALL_BUT_OSC);
 	out_w(WDT_LOAD, load);
 	out_w(WDT_CTRL, WDT_CTRL_ENABLE | WDT_CTRL_PAUSE_ALL);
 }
@@ -101,6 +103,14 @@ EXPORT void app_watchdog_feed(void)
 	/* LOAD is write-only: re-write the saved value to restart the count */
 	if (wdt_load != 0UL) {
 		out_w(WDT_LOAD, wdt_load);
+	}
+}
+
+/* Print a readable message if a kernel call failed (negative error code) */
+LOCAL void app_check(INT er, const char *what)
+{
+	if (er < E_OK) {
+		tm_printf((UB*)"ERROR %s: %d\n", what, er);
 	}
 }
 
@@ -129,11 +139,11 @@ EXPORT ID app_start_task_stk(FP entry, PRI pri, UW prc, SZ stksz,
 #endif
 	tid = tk_cre_tsk(&ctsk);
 	if (tid < E_OK) {
-		CHECK(tid, name);
+		app_check(tid, name);
 		return tid;
 	}
 	er = tk_sta_tsk(tid, 0);
-	CHECK(er, name);
+	app_check(er, name);
 	return (er < E_OK) ? er : tid;
 }
 
@@ -161,29 +171,35 @@ EXPORT INT usermain(void)
 	/* Phase 0: motion first, before anything can block (PIO offset 0) */
 	er_motion = subsystem2_init();
 
-	app_log((UB*)"\n=== IS11 autonomous car, micro T-Kernel on Pico W ===\n");
+	app_log((UB*)"\n=== IS11 autonomous car, micro T-Kernel on Pico W "
+		     "===\n");
 #if TK_SUPPORT_SMP
 	app_log((UB*)"WARNING: design assumes SMP=0 (single-core build)\n");
 #endif
 	if (wdt_rebooted) {
 		app_log((UB*)"boot: WATCHDOG RESET detected\n");
 	}
-	CHECK(er_motion, "subsystem2_init");
+	app_check(er_motion, "subsystem2_init");
 
 	/* Phase 1: every other subsystem creates its kernel objects.
 	   Subsystem 5 owns the System Event Group and most queues, so it
 	   goes next; the others only create objects they receive on. */
-	CHECK(subsystem5_init(), "subsystem5_init");
-	CHECK(subsystem1_init(), "subsystem1_init");
-	CHECK(subsystem3_init(), "subsystem3_init");
-	CHECK(subsystem4_init(), "subsystem4_init");
+	app_check(subsystem5_init(), "subsystem5_init");
+	app_check(subsystem1_init(), "subsystem1_init");
+	app_check(subsystem3_init(), "subsystem3_init");
+	app_check(subsystem4_init(), "subsystem4_init");
 
 	/* Phase 2: start tasks, highest priority first */
-	CHECK(subsystem5_start(), "subsystem5_start");	/* ctrl + scan */
-	CHECK(subsystem2_start(), "subsystem2_start");	/* motion      */
-	CHECK(subsystem3_start(), "subsystem3_start");	/* line        */
-	CHECK(subsystem4_start(), "subsystem4_start");	/* imu         */
-	CHECK(subsystem1_start(), "subsystem1_start");	/* comms       */
+	/* ctrl + scan */
+	app_check(subsystem5_start(), "subsystem5_start");
+	/* motion */
+	app_check(subsystem2_start(), "subsystem2_start");
+	/* line */
+	app_check(subsystem3_start(), "subsystem3_start");
+	/* imu */
+	app_check(subsystem4_start(), "subsystem4_start");
+	/* comms */
+	app_check(subsystem1_start(), "subsystem1_start");
 
 	app_log((UB*)"all subsystems started\n\n");
 

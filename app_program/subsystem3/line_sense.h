@@ -19,12 +19,13 @@
    Set to 0 once the thresholds are set. */
 #define LINE_DIAG		1
 
-#define LINE_BLACK_IS_HIGH	1	/* analogue IR modules: black = high V */
+/* analogue IR modules: black = high V */
+#define LINE_BLACK_IS_HIGH	1
 #define LINE_DEF_WHITE		250	/* measured 26 Oct: white 130-250    */
 #define LINE_DEF_BLACK		3700	/* measured 26 Oct: black 3600-4060  */
-#define LINE_MIN_CONTRAST	300	/* raw counts between black and white (was 800;
-					   lowered 28 Oct so a weak centre sensor is
-					   scaled up instead of ignored) */
+/* raw counts between black and white (was 800; lowered 28 Oct so a weak centre
+   sensor is scaled up instead of ignored) */
+#define LINE_MIN_CONTRAST	300
 
 typedef struct {
 	UH	white[3];	/* IR_L, IR_C, IR_R */
@@ -37,7 +38,8 @@ IMPORT INT  line_normalise(const LINE_CAL *cal, UINT ch, INT raw);
 /* Line error from IR_L and IR_C only (FR1).  n_l, n_c: 0..1000.
    Returns -1000..+1000 (> 0: line to the left).  *on_line is TRUE when
    either sensor sees black. */
-#define LINE_BLACK_N		400	/* hysteresis: black above ... (was 600, lowered 28 Oct) */
+/* hysteresis: black above ... (was 600, lowered 28 Oct) */
+#define LINE_BLACK_N		400
 #define LINE_WHITE_N		250	/* ... white below (was 400)    */
 IMPORT INT  line_error(INT n_l, INT n_c, INT n_r, BOOL *on_line);
 
@@ -55,7 +57,8 @@ IMPORT INT line_track_step(LINE_TRACK *s, INT n_c, INT n_r, BOOL *on_line);
  *  exact speed does not matter; tried forwards then backwards.
  * --------------------------------------------------------------------- */
 #define CODE39_ELEMENTS		29
-#define CODE39_MIN_RATIO_X10	15	/* narrowest wide >= 1.5 x widest narrow */
+/* narrowest wide >= 1.5 x widest narrow */
+#define CODE39_MIN_RATIO_X10	15
 
 #define C39_OK			0
 #define C39_ERR_COUNT		(-1)	/* not 29 elements      */
@@ -188,14 +191,17 @@ IMPORT BC_RESULT bc_reader_feed(BC_READER *r, INT n_r, W um,
  *  DESIGN VALUES: check on the real mat (testing/subsystem3, S3-M05).
  * --------------------------------------------------------------------- */
 #define CROSS_MIN_UM		8000U	/* narrower: noise / thin bar    */
-#define CROSS_MAX_UM		90000U	/* wider: main line (16 Nov: 60->90 mm, skewed approach) */
+/* wider: main line (16 Nov: 60->90 mm, skewed approach) */
+#define CROSS_MAX_UM		90000U
 #define CROSS_QUIET_UM		12000U	/* = BC_QUIET_MIN_UM            */
-#define CROSS_SLACK_UM		70000U	/* sensors not exactly in a row (16 Nov: 40->70 mm) */
+/* sensors not exactly in a row (16 Nov: 40->70 mm) */
+#define CROSS_SLACK_UM		70000U
 /* 16 Nov: C and R black together = maybe a crossing line arriving at an
    angle (R first).  Hold the heading this far so the car does not turn
    into the right arm before IR_L reaches the stripe. */
 #define CROSS_EARLY_HOLD_MM	45U
-#define CROSS_EARLY_GAP_MM	150U	/* no new early hold this soon after one */
+/* no new early hold this soon after one */
+#define CROSS_EARLY_GAP_MM	150U
 /* reasons a crossing candidate was dropped (CROSS_DET.reject) */
 #define CXR_NONE	0U
 #define CXR_NARROW	1U

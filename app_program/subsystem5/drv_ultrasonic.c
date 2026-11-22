@@ -26,17 +26,18 @@ EXPORT volatile UW us_echo_word;
 
 /* PWM slice 0 as a gated 1 MHz counter on GP1 (channel B) */
 #define US_SLICE		0UL
-#define US_REG(off)		(PWM_BASE + (US_SLICE * 0x14UL) + (off))
-#define US_CSR			US_REG(PWM_CHx_CSR)
-#define US_DIV			US_REG(PWM_CHx_DIV)
-#define US_CTR			US_REG(PWM_CHx_CTR)
-#define US_TOP			US_REG(PWM_CHx_TOP)
+#define US_BASE			(PWM_BASE + (US_SLICE * 0x14UL))
+#define US_CSR			(US_BASE + PWM_CHx_CSR)
+#define US_DIV			(US_BASE + PWM_CHx_DIV)
+#define US_CTR			(US_BASE + PWM_CHx_CTR)
+#define US_TOP			(US_BASE + PWM_CHx_TOP)
 #define US_CSR_DIVMODE_LEVEL	(1UL << 4)	/* count while B is high */
 #define US_DIV_INT		125UL		/* 125 MHz / 125 = 1 MHz */
 
 EXPORT ER drv_us_init(void)
 {
-	/* TRIG: plain SIO output (GP0 is UART0 TX only in CRASH_REPORT builds) */
+	/* TRIG: plain SIO output (GP0 is UART0 TX only in CRASH_REPORT
+	   builds) */
 	gpio_set_pin(US_TRIG_PIN, GPIO_MODE_OUT);
 	gpio_set_val(US_TRIG_PIN, 0);
 
@@ -47,11 +48,11 @@ EXPORT ER drv_us_init(void)
 	out_w(US_DIV, US_DIV_INT << 4);		/* 8.4 fixed point */
 	out_w(US_TOP, 0xFFFFUL);
 	out_w(US_CTR, 0);
-	out_w(US_CSR, US_CSR_DIVMODE_LEVEL | PWM_CH_CSR_EN);
+	out_w(US_CSR, US_CSR_DIVMODE_LEVEL | (UW)PWM_CH_CSR_EN);
 
 	/* ECHO: input to the PWM block, output driver off, pull-down so a
 	   missing module reads "no echo".  GPIO_IN still shows the pin. */
-	set_w(GPIO(US_ECHO_PIN), GPIO_OD | GPIO_IE | GPIO_PDE);
+	set_w(GPIO(US_ECHO_PIN), (UW)GPIO_OD | (UW)GPIO_IE | (UW)GPIO_PDE);
 	clr_w(GPIO(US_ECHO_PIN), GPIO_PUE);
 	out_w(GPIO_CTRL(US_ECHO_PIN), GPIO_CTRL_FUNCSEL_PWM);
 
@@ -101,18 +102,21 @@ LOCAL US_RESULT ping(UW *hw_us, UW *poll_us)
 	}
 	while (gpio_get_val(US_ECHO_PIN) != 0U) {
 		if (in_w(US_CTR) > ECHO_TIMEOUT_US) {
-			return US_FAR;		/* nothing within ~1 m: normal */
+			/* nothing within ~1 m: normal */
+			return US_FAR;
 		}
 	}
 	if (saw_rise) {
-		dur = app_time_us() - tr;	/* old way: includes pre-emption */
+		/* old way: includes pre-emption */
+		dur = app_time_us() - tr;
 	}
 	*hw_us = in_w(US_CTR) & 0xFFFFUL;	/* new way: exact */
 	if (*hw_us > ECHO_TIMEOUT_US) {
 		return US_FAR;
 	}
 	if (poll_us != NULL) {
-		*poll_us = dur;			/* 0 = pulse missed by polling */
+		/* 0 = pulse missed by polling */
+		*poll_us = dur;
 	}
 	return US_OK;
 }
@@ -123,7 +127,8 @@ EXPORT US_RESULT drv_us_ping(UW *mm)
 	US_RESULT	r = ping(&hw, NULL);
 
 	if (r == US_OK) {
-		us_echo_word = ECHO_VALID | (hw & ECHO_DUR_MASK);	/* diagnostics */
+		/* diagnostics */
+		us_echo_word = ECHO_VALID | (hw & ECHO_DUR_MASK);
 		*mm = drv_us_dur_to_mm(hw);
 	}
 	return r;

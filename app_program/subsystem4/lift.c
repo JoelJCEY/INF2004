@@ -15,7 +15,8 @@ EXPORT void lift_init(LIFT_DET *d, W x0, W y0, W z0)
 	d->g0[2] = z0;
 	d->g0_mag = (W)hump_isqrt((UW)((x0 * x0) + (y0 * y0) + (z0 * z0)));
 	if (d->g0_mag < 500) {
-		d->g0_mag = 1000;	/* bad baseline: assume 1 g (still works for tilt sign) */
+		/* bad baseline: assume 1 g (still works for tilt sign) */
+		d->g0_mag = 1000;
 	}
 	for (i = 0; i < LIFT_AVG_N; i++) {
 		d->up[i] = 0;
@@ -31,10 +32,12 @@ EXPORT void lift_init(LIFT_DET *d, W x0, W y0, W z0)
 /* reading . g0 / |g0|  = the part of the reading along "down" (mg) */
 LOCAL W along_g0(const LIFT_DET *d, const W a[3])
 {
-	return ((a[0] * d->g0[0]) + (a[1] * d->g0[1]) + (a[2] * d->g0[2])) / d->g0_mag;
+	return ((a[0] * d->g0[0]) + (a[1] * d->g0[1])
+		+ (a[2] * d->g0[2])) / d->g0_mag;
 }
 
-EXPORT LIFT_RESULT lift_update(LIFT_DET *d, const W raw[3], const W filt[3], BOOL on_hump)
+EXPORT LIFT_RESULT lift_update(LIFT_DET *d, const W raw[3], const W filt[3],
+	BOOL on_hump)
 {
 	INT	i;
 	W	sum = 0;
@@ -57,8 +60,10 @@ EXPORT LIFT_RESULT lift_update(LIFT_DET *d, const W raw[3], const W filt[3], BOO
 	d->last_up_mg = sum / d->un;
 
 	/* OVERTURNED: angle between the filtered reading and g0 */
-	fmag = (W)hump_isqrt((UW)((filt[0] * filt[0]) + (filt[1] * filt[1]) + (filt[2] * filt[2])));
-	cos1000 = (fmag > 100) ? ((along_g0(d, filt) * 1000) / fmag) : 0;	/* ~free fall: no direction */
+	fmag = (W)hump_isqrt((UW)((filt[0] * filt[0]) + (filt[1] * filt[1])
+		+ (filt[2] * filt[2])));
+	/* ~free fall: no direction */
+	cos1000 = (fmag > 100) ? ((along_g0(d, filt) * 1000) / fmag) : 0;
 	d->last_cos1000 = cos1000;
 	d->tilt_n = (cos1000 < LIFT_TILT_COS1000) ? (d->tilt_n + 1) : 0;
 

@@ -16,16 +16,20 @@
 
 #define SCAN_POSITIONS		25	/* 30°..150° in 5° steps */
 #define SCAN_RIGHT_IS_LOW_ANGLE	1
-#define SCAN_STOP_DIST_MM	200	/* 20 cm (31 Oct; 30 Oct was 15, before that 7 cm): readings under 4 cm are the car's
-					   own bracket, so 5 cm left too small a
-					   window to catch a real obstacle */
-#define SCAN_OBST_BAND_MM	150	/* points within closest+band = same obstacle */
-#define SCAN_CONFIRM_MM		300	/* after the stop: must be closer than this
-					   (31 Oct: 30 cm, was 25; stays 10 cm
-					   beyond the stop distance) */
-#define SCAN_CONFIRM_HITS	2	/* ...at this many neighbouring 5° angles   */
-#define SCAN_RANGE_MM		400	/* farther points are background (was 600; 28 Oct:
-					   floor echoes appear farther out)       */
+/* 20 cm (31 Oct; 30 Oct was 15, before that 7 cm): readings under 4 cm are the
+   car's own bracket, so 5 cm left too small a window to catch a real obstacle
+   */
+#define SCAN_STOP_DIST_MM	200
+/* points within closest+band = same obstacle */
+#define SCAN_OBST_BAND_MM	150
+/* after the stop: must be closer than this (31 Oct: 30 cm, was 25; stays 10 cm
+   beyond the stop distance) */
+#define SCAN_CONFIRM_MM		300
+/* ...at this many neighbouring 5° angles */
+#define SCAN_CONFIRM_HITS	2
+/* farther points are background (was 600; 28 Oct: floor echoes appear farther
+   out) */
+#define SCAN_RANGE_MM		400
 /* Sweep only straight ahead (team, 28 Oct): 60..120 deg instead of
    30..150, so the sensor does not pick up the floor or things off to
    the side.  Indexes into the 5-degree table. */
@@ -36,22 +40,27 @@
 #define SCAN_IDX_MAX		18	/* 120 deg: left end  */
 #define SCAN_EDGE_EXTRA_MM	100	/* extra sideways move if the obstacle
 					   is wider than the sweep */
-#define SCAN_CAR_HALF_W_MM	80	/* half the car width                     */
-#define SCAN_MARGIN_MM		60	/* clearance kept on the passing side     */
+/* half the car width */
+#define SCAN_CAR_HALF_W_MM	80
+/* clearance kept on the passing side */
+#define SCAN_MARGIN_MM		60
 #define SCAN_PASS_EXTRA_MM	40	/* 31 Oct: extra sideways room on the
 					   bypass only (30 Oct video: car passed
-					   right beside the bottle)               */
-#define SCAN_OBST_DEPTH_MM	150	/* depth assumed for the side-corridor check */
+					   right beside the bottle) */
+/* depth assumed for the side-corridor check */
+#define SCAN_OBST_DEPTH_MM	150
 /* 4 Nov: the forward-leg estimate assumes the obstacle is as deep as it
    is wide (bottles, boxes), clamped to this range.  The sensor cannot see
    behind it; a fixed 150 mm sent the car far past a 7 cm bottle. */
 #define SCAN_DEPTH_MIN_MM	50
 #define SCAN_DEPTH_MAX_MM	200
 #define SCAN_CAR_LEN_MM		200
-#define SCAN_NO_READING		0U	/* dist[] value for "not measured"        */
+/* dist[] value for "not measured" */
+#define SCAN_NO_READING		0U
 
 typedef struct {
-	UH	dist[SCAN_POSITIONS];	/* mm, US_FAR_MM if far, 0 if not measured */
+	/* mm, US_FAR_MM if far, 0 if not measured */
+	UH	dist[SCAN_POSITIONS];
 } SCAN_SWEEP;
 
 typedef struct {
@@ -80,25 +89,33 @@ typedef struct {
  *  even if the beam no longer sees it.
  * --------------------------------------------------------------------- */
 #define GLANCE_SEQ_N		8
-#define GLANCE_LOOK_MM		350	/* in-path echoes up to this far ahead are remembered */
-#define GMEM_N			12	/* remembered points                   */
-#define GMEM_MATCH_MM		60	/* same object: this close along and across */
-#define GMEM_KEEP_GLANCES	16	/* forget a point after 2 full cycles (~3 s) */
+/* in-path echoes up to this far ahead are remembered */
+#define GLANCE_LOOK_MM		350
+/* remembered points */
+#define GMEM_N			12
+/* same object: this close along and across */
+#define GMEM_MATCH_MM		60
+/* forget a point after 2 full cycles (~3 s) */
+#define GMEM_KEEP_GLANCES	16
 #define GMEM_NONE		(-1)
 
 typedef struct {
-	W	at[GMEM_N];		/* path mm where the point is          */
+	/* path mm where the point is */
+	W	at[GMEM_N];
 	W	side[GMEM_N];		/* mm, + = right                      */
 	UW	when[GMEM_N];		/* glance counter when it was seen    */
 	UB	used[GMEM_N];
 	UINT	next;
-	W	obj_at;			/* confirmed object (path mm), or GMEM_NONE */
+	/* confirmed object (path mm), or GMEM_NONE */
+	W	obj_at;
 } GLANCE_MEM;
 
-IMPORT const INT glance_seq[GLANCE_SEQ_N];	/* servo index offsets from centre */
+/* servo index offsets from centre */
+IMPORT const INT glance_seq[GLANCE_SEQ_N];
 IMPORT void gmem_clear(GLANCE_MEM *g);
 /* One in-path echo: ahead/side from the car now, at odometry path_mm. */
-IMPORT void gmem_add(GLANCE_MEM *g, W path_mm, W ahead_mm, W side_mm, UW glance_no);
+IMPORT void gmem_add(GLANCE_MEM *g, W path_mm, W ahead_mm, W side_mm,
+	UW glance_no);
 /* Forget old / passed points.  Returns the predicted distance ahead of
    the confirmed object, or GMEM_NONE. */
 IMPORT W    gmem_ahead(GLANCE_MEM *g, W path_mm, UW glance_no);

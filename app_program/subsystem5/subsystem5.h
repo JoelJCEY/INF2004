@@ -36,13 +36,20 @@
 /* ---------------------------------------------------------------------
  *  Kernel objects owned by ctrl_task (it receives on all of them)
  * --------------------------------------------------------------------- */
-IMPORT ID	flg_sys;		/* System Event Group (app.h EVF_/FLT_) */
-IMPORT ID	mtx_mission;		/* mission state, TA_INHERIT (F5)       */
-IMPORT ID	mbf_nav;		/* IF-09 line_task   -> ctrl_task       */
-IMPORT ID	mbf_terrain;		/* IF-11 imu_task    -> ctrl_task       */
-IMPORT ID	mbf_obstacle;		/* IF-13 scan_task   -> ctrl_task       */
-IMPORT ID	mbf_motion_status;	/* IF-06 motion_task -> ctrl_task       */
-IMPORT ID	mbf_remote;		/* IF-03 comms       -> ctrl_task       */
+/* System Event Group (app.h EVF_/FLT_) */
+IMPORT ID	flg_sys;
+/* mission state, TA_INHERIT (F5) */
+IMPORT ID	mtx_mission;
+/* IF-09 line_task   -> ctrl_task */
+IMPORT ID	mbf_nav;
+/* IF-11 imu_task    -> ctrl_task */
+IMPORT ID	mbf_terrain;
+/* IF-13 scan_task   -> ctrl_task */
+IMPORT ID	mbf_obstacle;
+/* IF-06 motion_task -> ctrl_task */
+IMPORT ID	mbf_motion_status;
+/* IF-03 comms       -> ctrl_task */
+IMPORT ID	mbf_remote;
 
 #define S5_QUEUE_MSGS		8	/* depth of every queue above */
 
@@ -86,11 +93,16 @@ IMPORT volatile UW scan_bench_seq;
  *  IF-13  Obstacle Profile Queue (scan_task -> ctrl_task)
  * --------------------------------------------------------------------- */
 typedef enum {
-	OB_ALERT		= 1,	/* 2 readings inside the stop distance  */
-	OB_PROFILE		= 2,	/* sweep finished: fields valid         */
-	OB_SENSOR_FAULT		= 3,	/* 3 x no echo: a failed attempt        */
-	OB_CLEARANCE_LOST	= 4,	/* side guard tripped during a bypass   */
-	OB_NO_CLEARANCE		= 5	/* profile: neither side is wide enough */
+	/* 2 readings inside the stop distance */
+	OB_ALERT		= 1,
+	/* sweep finished: fields valid */
+	OB_PROFILE		= 2,
+	/* 3 x no echo: a failed attempt */
+	OB_SENSOR_FAULT		= 3,
+	/* side guard tripped during a bypass */
+	OB_CLEARANCE_LOST	= 4,
+	/* profile: neither side is wide enough */
+	OB_NO_CLEARANCE		= 5
 } OBSTACLE_KIND;
 
 #define OBS_SIDE_NONE		0U
@@ -156,7 +168,6 @@ IMPORT volatile UW scan_rescan_request;
    "beside it" by sideways distance, which works for any angle. */
 #define SCAN_PASS_LOOK_RIGHT_DEG 70	/* bypass on the left  */
 #define SCAN_PASS_LOOK_LEFT_DEG	135	/* bypass on the right */
-#define SCAN_DEG_TO_IDX(d)	(((d) - 30) / 5)
 IMPORT volatile UW scan_pass_watch;
 IMPORT volatile UW scan_pass_seq;
 IMPORT volatile UW scan_pass_extra_mm;
@@ -166,7 +177,18 @@ IMPORT volatile UW scan_pass_extra_mm;
 #define SERVO_MAX_DEG		150
 #define SERVO_STEP_DEG		5
 #define SERVO_CENTRE_IDX	12	/* 90°: straight ahead */
-#define SERVO_IDX_TO_DEG(i)	(SERVO_MIN_DEG + ((INT)(i) * SERVO_STEP_DEG))
+
+/* Servo index of an angle (degrees, 30..150) */
+Inline UINT servo_deg_to_idx(INT deg)
+{
+	return (UINT)((deg - SERVO_MIN_DEG) / SERVO_STEP_DEG);
+}
+
+/* Angle (degrees) of a servo index */
+Inline INT servo_idx_to_deg(UINT idx)
+{
+	return SERVO_MIN_DEG + ((INT)idx * SERVO_STEP_DEG);
+}
 
 /* ---------------------------------------------------------------------
  *  Private to subsystem 5

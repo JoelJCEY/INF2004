@@ -17,14 +17,22 @@
 #include "subsystem4.h"
 
 #define HUMP_WHEELBASE_MM	110	/* drive axle to caster: measure (A4) */
-#define HUMP_STEP_MM		5	/* profile grid                        */
-#define HUMP_ENTRY_UM		6000	/* front 6 mm above rear (~3 deg)      */
-#define HUMP_ENTRY_MM		20	/* ...held for 20 mm: start wobble / tilt ignored */
-#define HUMP_EXIT_UM		1000	/* "level" band                        */
-#define HUMP_PEAK_DROP_UM	3000	/* peak confirmed after a 3 mm drop    */
-#define HUMP_MAX_CLIMB_MM	500	/* longer: ramp or bad reading         */
-#define HUMP_FALSE_LEVEL_MM	50	/* level again without a peak: discard */
-#define HUMP_PROFILE_STEPS	200	/* 1 m of profile                      */
+/* profile grid */
+#define HUMP_STEP_MM		5
+/* front 6 mm above rear (~3 deg) */
+#define HUMP_ENTRY_UM		6000
+/* ...held for 20 mm: start wobble / tilt ignored */
+#define HUMP_ENTRY_MM		20
+/* "level" band */
+#define HUMP_EXIT_UM		1000
+/* peak confirmed after a 3 mm drop */
+#define HUMP_PEAK_DROP_UM	3000
+/* longer: ramp or bad reading */
+#define HUMP_MAX_CLIMB_MM	500
+/* level again without a peak: discard */
+#define HUMP_FALSE_LEVEL_MM	50
+/* 1 m of profile */
+#define HUMP_PROFILE_STEPS	200
 
 typedef enum {
 	HS_LEVEL	= 0,

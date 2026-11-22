@@ -11,7 +11,8 @@
 #include "../subsystem4/subsystem4.h"	/* live lift / tilt values */
 #include "../subsystem5/scan_profile.h"	/* SCAN_POSITIONS */
 
-EXPORT volatile UW comms_mqtt_connected;	/* writer: Wi-Fi task (bridge) */
+/* writer: Wi-Fi task (bridge) */
+EXPORT volatile UW comms_mqtt_connected;
 EXPORT volatile UW comms_rx_rejected;
 /* IF-15 barcode map (app.h).  Only writer: comms_bridge_on_command() */
 EXPORT volatile UW app_barcode_map = APP_BARCODE_MAP_DEFAULT;
@@ -26,11 +27,13 @@ LOCAL void on_map_frame(const unsigned char *data, int len)
 
 	if (comms_decode_map((const UB*)data, (INT)len, &map) != E_OK) {
 		comms_rx_rejected++;
-		app_log((UB*)"comms: barcode map REJECTED: need 4 different letters A-Z or 0-9\n");
+		app_log((UB*)"comms: barcode map REJECTED: need 4 different "
+			     "letters A-Z or 0-9\n");
 		return;
 	}
 	app_barcode_map = map;		/* one aligned 32-bit store */
-	app_log((UB*)"comms: barcode map set: forward '%c', u-turn '%c', left '%c', right '%c'\n",
+	app_log((UB*)"comms: barcode map set: forward '%c', u-turn '%c', "
+		     "left '%c', right '%c'\n",
 		  (INT)(map & 0xFFU), (INT)((map >> 8) & 0xFFU),
 		  (INT)((map >> 16) & 0xFFU), (INT)((map >> 24) & 0xFFU));
 }
@@ -64,9 +67,11 @@ void comms_bridge_on_command(const unsigned char *data, int len)
 		on_map_frame(data, len);
 		return;
 	}
-	if ((len == WIRE_SONG_LEN) && (data[0] == 1U) && (data[1] == (UB)WIRE_OP_SONG)) {
+	if ((len == WIRE_SONG_LEN) && (data[0] == 1U) &&
+		(data[1] == (UB)WIRE_OP_SONG)) {
 		if (data[3] <= 6U) {
-			/* sequence in bits 8..15, so the same song can be replayed */
+			/* sequence in bits 8..15, so the same song can be
+			   replayed */
 			app_song_req = ((UW)data[2] << 8) | (UW)data[3];
 		} else {
 			comms_rx_rejected++;
@@ -76,17 +81,20 @@ void comms_bridge_on_command(const unsigned char *data, int len)
 	if ((len == WIRE_TEST_LEN) && (data[1] == (UB)WIRE_OP_BC_TEST)) {
 		UW	on;
 
-		if (comms_decode_bc_test((const UB*)data, (INT)len, &on) == E_OK) {
+		if (comms_decode_bc_test((const UB*)data, (INT)len,
+			&on) == E_OK) {
 			app_barcode_test = on;		/* one aligned store */
 			app_log((UB*)"comms: barcode TEST mode %s\n",
-				  on ? "ON: the car will not drive, slide a barcode under the left sensor"
+				  on ? "ON: the car will not drive, slide a "
+				       "barcode under the left sensor"
 				     : "OFF: normal driving");
 		} else {
 			comms_rx_rejected++;
 		}
 		return;
 	}
-	if ((mbf_remote <= 0) || (comms_decode_cmd(data, (INT)len, &m) != E_OK)) {
+	if ((mbf_remote <= 0) ||
+		(comms_decode_cmd(data, (INT)len, &m) != E_OK)) {
 		comms_rx_rejected++;
 		app_log((UB*)"comms: command rejected (len %d)\n", len);
 		return;
@@ -126,15 +134,20 @@ int comms_bridge_imu_text(unsigned char *buf, int max)
 	if (max < 80) {
 		return 0;
 	}
-	return (int)tm_sprintf((UB*)buf, (const UB*)"%d %d %d %d %d %d %d %d %d %d",
+	return (int)tm_sprintf((UB*)buf,
+		(const UB*)"%d %d %d %d %d %d %d %d %d %d",
 			       (INT)imu_tilt_cos1000, (INT)imu_up_mg,
-			       (INT)imu_lift_now, (INT)(imu_lift_count & 0xFFFFU),
-			       (INT)imu_acc_filt[0], (INT)imu_acc_filt[1], (INT)imu_acc_filt[2],
-			       (INT)imu_base_mg[0], (INT)imu_base_mg[1], (INT)imu_base_z_mg);
+			       (INT)imu_lift_now,
+			       	(INT)(imu_lift_count & 0xFFFFU),
+			       (INT)imu_acc_filt[0], (INT)imu_acc_filt[1],
+			       	(INT)imu_acc_filt[2],
+			       (INT)imu_base_mg[0], (INT)imu_base_mg[1],
+			       	(INT)imu_base_z_mg);
 }
 
 /* Live IR snapshot for the dashboard (is11/car/ir, 10 Hz):
-   "rawL rawC rawR normL normC normR err barsTotal barsPass barsLastPass readerN recross encRejects"
+   "rawL rawC rawR normL normC normR err barsTotal barsPass barsLastPass readerN
+   recross encRejects"
    (the last six: lines scanned by IR_L, see subsystem3.h) */
 int comms_bridge_ir_text(unsigned char *buf, int max)
 {
@@ -143,11 +156,15 @@ int comms_bridge_ir_text(unsigned char *buf, int max)
 	if (max < 80) {
 		return 0;
 	}
-	return (int)tm_sprintf((UB*)buf, (const UB*)"%d %d %d %d %d %d %d %d %d %d %d %d %d",
-			       (INT)line_raw_avg[0], (INT)line_raw_avg[1], (INT)line_raw_avg[2],
-			       (INT)line_norm[0], (INT)line_norm[1], (INT)line_norm[2],
+	return (int)tm_sprintf((UB*)buf,
+		(const UB*)"%d %d %d %d %d %d %d %d %d %d %d %d %d",
+			       (INT)line_raw_avg[0], (INT)line_raw_avg[1],
+			       	(INT)line_raw_avg[2],
+			       (INT)line_norm[0], (INT)line_norm[1],
+			       	(INT)line_norm[2],
 			       (INT)line_unpack_err(line_latest),
-			       (INT)(line_bar_total & 0xFFFFU), (INT)(bp & 0xFFFFU),
+			       (INT)(line_bar_total & 0xFFFFU),
+			       	(INT)(bp & 0xFFFFU),
 			       (INT)(bp >> 16), (INT)line_reader_n,
 			       (INT)(line_bar_recross & 0xFFFFU),
 			       (INT)(line_enc_rejects & 0xFFFFU));
@@ -165,7 +182,7 @@ int comms_bridge_us_text(unsigned char *buf, int max)
 	}
 	return (int)tm_sprintf((UB*)buf, (const UB*)"%d %d %d",
 			       (INT)((w >> 5) & 0x7U),
-			       (INT)SERVO_IDX_TO_DEG(w & 0x1FU),
+			       (INT)servo_idx_to_deg(w & 0x1FU),
 			       (INT)((w >> 16) & 0x1FFFU));
 }
 
@@ -183,7 +200,8 @@ int comms_bridge_bc_text(unsigned char *buf, int max)
 	UW		info;
 	INT		n, k, i;
 
-	if ((s1 == sent) || ((s1 & 1U) != 0U) || (max < (LINE_BC_SHOW_MAX * 6 + 24))) {
+	if ((s1 == sent) || ((s1 & 1U) != 0U) ||
+		(max < (LINE_BC_SHOW_MAX * 6 + 24))) {
 		return 0;
 	}
 	info = line_bc_info;
@@ -221,7 +239,8 @@ int comms_bridge_sweep_text(unsigned char *buf, int max)
 	sent = seq;
 	n = tm_sprintf((UB*)buf, (const UB*)"%d", (INT)seq);
 	for (i = 0; i < SCAN_POSITIONS; i++) {
-		n += tm_sprintf((UB*)&buf[n], (const UB*)" %d", (INT)scan_last_sweep[i]);
+		n += tm_sprintf((UB*)&buf[n], (const UB*)" %d",
+			(INT)scan_last_sweep[i]);
 	}
 	return (int)n;
 }

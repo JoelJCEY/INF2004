@@ -32,7 +32,7 @@ EXPORT INT line_normalise(const LINE_CAL *cal, UINT ch, INT raw)
 #else
 	n = ((w - raw) * 1000) / (w - b);
 #endif
-	return APP_CLAMP(n, 0, 1000);
+	return app_clamp(n, 0, 1000);
 }
 
 /* ---------------------------------------------------------------------
@@ -64,19 +64,28 @@ EXPORT INT line_track_step(LINE_TRACK *s, INT n_c, INT n_r, BOOL *on_line)
 	} else {
 		s->centre_ticks = 0;
 	}
-	if (n_r >= LINE_BLACK_N) s->right = TRUE;
-	else if (n_r <= LINE_WHITE_N) s->right = FALSE;
+	if (n_r >= LINE_BLACK_N) {
+		s->right = TRUE;
+	} else if (n_r <= LINE_WHITE_N) {
+		s->right = FALSE;
+	} else {
+		/* between the thresholds: keep the last state (hysteresis) */
+	}
 	*on_line = s->centre || s->right;
-	if (!s->right) return 0;
+	if (!s->right) {
+		return 0;
+	}
 	/* C+R also occurs on an ordinary right bend. Start easing right
 	   while C still sees black; it is not proof of a junction. */
 	if (s->centre) {
-		return -(200 * APP_CLAMP(n_r - LINE_WHITE_N, 0,
-					1000 - LINE_WHITE_N)) / (1000 - LINE_WHITE_N);
+		return -(200 * app_clamp(n_r - LINE_WHITE_N, 0,
+					1000 - LINE_WHITE_N)) / (1000
+						- LINE_WHITE_N);
 	}
 	/* AO strength gives a gradual correction instead of a fixed -600. */
-	return -(180 + (420 * APP_CLAMP(n_r - LINE_WHITE_N, 0,
-					1000 - LINE_WHITE_N)) / (1000 - LINE_WHITE_N));
+	return -(180 + (420 * app_clamp(n_r - LINE_WHITE_N, 0,
+					1000 - LINE_WHITE_N)) / (1000
+						- LINE_WHITE_N));
 }
 
 EXPORT INT line_error(INT n_l, INT n_c, INT n_r, BOOL *on_line)
@@ -136,7 +145,7 @@ LOCAL INT c39_pattern(const UW *w, INT step)
 	UW	t;
 	UW	thr;
 	INT	i, j;
-	INT	pat = 0;
+	UW	pat = 0U;
 
 	for (i = 0; i < 9; i++) {
 		sorted[i] = w[i * step];
@@ -154,9 +163,9 @@ LOCAL INT c39_pattern(const UW *w, INT step)
 	}
 	thr = (sorted[2] + sorted[3]) / 2U;
 	for (i = 0; i < 9; i++) {
-		pat = (pat << 1) | ((w[i * step] > thr) ? 1 : 0);
+		pat = (pat << 1) | ((w[i * step] > thr) ? 1U : 0U);
 	}
-	return pat;
+	return (INT)pat;
 }
 
 LOCAL INT c39_lookup(INT pat)
@@ -180,7 +189,9 @@ LOCAL INT c39_try(const UW *widths, INT dir, UB *letter)
 	const UW *base;
 
 	for (k = 0; k < 3; k++) {
-		base = (dir > 0) ? &widths[k * 10] : &widths[CODE39_ELEMENTS - 1 - (k * 10)];
+		base = (dir > 0)
+			? &widths[k * 10]
+				: &widths[CODE39_ELEMENTS - 1 - (k * 10)];
 		pat = c39_pattern(base, dir);
 		if (pat < 0) {
 			return C39_ERR_RATIO;
@@ -263,7 +274,8 @@ LOCAL BC_RESULT bc_finish(BC_READER *r, UB *letter, INT *reason)
 		res = BCR_REJECT;
 	} else if (r->n == 1) {
 		/* One stripe with white on both sides: a branch, not a bar */
-		res = (r->widths[0] >= BC_JUNCTION_MIN_UM) ? BCR_JUNCTION : BCR_NONE;
+		res = (r->widths[0] >= BC_JUNCTION_MIN_UM)
+			? BCR_JUNCTION : BCR_NONE;
 	} else if (r->n > 1) {
 		d = code39_decode(r->widths, r->n, letter);
 		if (d == C39_OK) {
@@ -273,7 +285,8 @@ LOCAL BC_RESULT bc_finish(BC_READER *r, UB *letter, INT *reason)
 			res = BCR_REJECT;
 		}
 	}
-	r->state = BCS_ARMED;		/* the trailing white was a quiet zone */
+	/* the trailing white was a quiet zone */
+	r->state = BCS_ARMED;
 	r->n = 0;
 	r->max_um = 0;
 	r->samples = 0;
@@ -302,10 +315,12 @@ LOCAL BOOL bc_undo(BC_READER *r)
 {
 	if ((r->state == BCS_READING) && !r->overflow) {
 		if (r->n > 0) {
-			r->n--;			/* drop the element that edge ended */
+			/* drop the element that edge ended */
+			r->n--;
 			bc_recompute(r);
 		} else {
-			r->state = BCS_ARMED;	/* the first bar had not started */
+			/* the first bar had not started */
+			r->state = BCS_ARMED;
 			r->edge_pos = r->quiet_pos;
 		}
 	} else if (r->can_undo && (r->state != BCS_READING)) {
@@ -315,92 +330,115 @@ LOCAL BOOL bc_undo(BC_READER *r)
 		return FALSE;
 	}
 	if (r->black && (r->bars > 0U)) {
-		r->bars--;			/* the undone edge started a line */
+		/* the undone edge started a line */
+		r->bars--;
 	}
 	r->recross++;
 	return TRUE;
 }
 
-EXPORT BC_RESULT bc_reader_feed(BC_READER *r, INT n_r, W um,
-				UB *letter, INT *reason)
+#if BC_ADAPT
+/* 13 Nov (AO): follow the black / white levels actually seen and switch
+   at their middle (line_sense.h, BC_ADAPT).  Updates *black_n and
+   *white_n only once the levels are far enough apart. */
+LOCAL void bc_adapt_levels(BC_READER *r, INT n_r, W um,
+			   INT *black_n, INT *white_n)
 {
-	BOOL	level = r->black;
-	UW	end_um;
+	W	n16 = (W)n_r * 16;
+	W	au = app_abs(um);
+	W	range;
+
+	if (n16 > r->lvl_hi16) {
+		r->lvl_hi16 = n16;
+	}
+	if (n16 < r->lvl_lo16) {
+		r->lvl_lo16 = n16;
+	}
+	r->lvl_hi16 -= ((r->lvl_hi16 - n16) * au) / BC_LEVEL_DECAY_UM;
+	r->lvl_lo16 += ((n16 - r->lvl_lo16) * au) / BC_LEVEL_DECAY_UM;
+	range = (r->lvl_hi16 - r->lvl_lo16) / 16;
+	if (range >= BC_ADAPT_MIN_RANGE) {
+		W mid = (r->lvl_hi16 + r->lvl_lo16) / 32;
+		W h = ((range / 16) > BC_ADAPT_HYST_MIN)
+			? (range / 16) : BC_ADAPT_HYST_MIN;
+
+		*black_n = (INT)(mid + h);
+		*white_n = (INT)(mid - h);
+	}
+}
+#endif
+
+/* The sensor level changed at r->pos: undo a bounce, or close the
+   element that just ended and start the next one. */
+LOCAL void bc_edge(BC_READER *r, BOOL level)
+{
 	W	w;
 
-	INT	black_n = LINE_BLACK_N;
-	INT	white_n = LINE_WHITE_N;
-
-#if BC_ADAPT
-	/* 13 Nov (AO): follow the black / white levels actually seen and
-	   switch at their middle (line_sense.h, BC_ADAPT) */
-	{
-		W	n16 = (W)n_r * 16;
-		W	au = APP_ABS(um);
-		W	range;
-
-		if (n16 > r->lvl_hi16) r->lvl_hi16 = n16;
-		if (n16 < r->lvl_lo16) r->lvl_lo16 = n16;
-		r->lvl_hi16 -= ((r->lvl_hi16 - n16) * au) / BC_LEVEL_DECAY_UM;
-		r->lvl_lo16 += ((n16 - r->lvl_lo16) * au) / BC_LEVEL_DECAY_UM;
-		range = (r->lvl_hi16 - r->lvl_lo16) / 16;
-		if (range >= BC_ADAPT_MIN_RANGE) {
-			W mid = (r->lvl_hi16 + r->lvl_lo16) / 32;
-			W h = ((range / 16) > BC_ADAPT_HYST_MIN) ? (range / 16) : BC_ADAPT_HYST_MIN;
-
-			black_n = (INT)(mid + h);
-			white_n = (INT)(mid - h);
+	if ((r->pos <= (r->edge_pos + BC_RECROSS_UM)) && bc_undo(r)) {
+		/* debounced: back on the level before that edge */
+	} else {
+		/* An element just ended: its width is the distance the
+		   sensor moved between its two edges */
+		w = r->pos - r->edge_pos;
+		if (w < 0) {
+			w = 0;
 		}
-	}
-#endif
-	/* Threshold with hysteresis (VA2): edge noise cannot split a bar */
-	if (r->black && (n_r < white_n)) {
-		level = FALSE;
-	} else if (!r->black && (n_r > black_n)) {
-		level = TRUE;
-	}
-	r->pos += um;
-
-	if (level != r->black) {
-		if ((r->pos <= (r->edge_pos + BC_RECROSS_UM)) && bc_undo(r)) {
-			/* debounced: back on the level before that edge */
-		} else {
-			/* An element just ended: its width is the distance the
-			   sensor moved between its two edges */
-			w = r->pos - r->edge_pos;
-			if (w < 0) {
-				w = 0;
-			}
-			if (r->state == BCS_READING) {
-				if (r->n < BC_MAX_ELEMENTS) {
-					r->widths[r->n++] = (UW)w;
-					if ((UW)w > r->max_um) {
-						r->max_um = (UW)w;
-					}
-				} else {
-					r->overflow = TRUE;
+		if (r->state == BCS_READING) {
+			if (r->n < BC_MAX_ELEMENTS) {
+				r->widths[r->n++] = (UW)w;
+				if ((UW)w > r->max_um) {
+					r->max_um = (UW)w;
 				}
-			} else if ((r->state == BCS_ARMED) && level) {
-				r->state = BCS_READING;		/* first bar starts */
-				r->n = 0;
-				r->max_um = 0;
-				r->samples = 0;
-				r->start_pos = r->pos;
-				r->quiet_pos = r->edge_pos;
 			} else {
-				/* WAIT_GAP: any bar restarts the quiet-zone count */
+				r->overflow = TRUE;
 			}
-			if (level) {
-				r->bars++;
-			}
-			r->prev_edge_pos = r->edge_pos;
-			r->edge_pos = r->pos;
-			r->can_undo = TRUE;
+		} else if ((r->state == BCS_ARMED) && level) {
+			r->state = BCS_READING;		/* first bar starts */
+			r->n = 0;
+			r->max_um = 0;
+			r->samples = 0;
+			r->start_pos = r->pos;
+			r->quiet_pos = r->edge_pos;
+		} else {
+			/* WAIT_GAP: any bar restarts the quiet-zone count */
 		}
-		r->black = level;
+		if (level) {
+			r->bars++;
+		}
+		r->prev_edge_pos = r->edge_pos;
+		r->edge_pos = r->pos;
+		r->can_undo = TRUE;
 	}
-	w = r->pos - r->edge_pos;
-	r->run_um = (w > 0) ? (UW)w : 0U;
+	r->black = level;
+}
+
+/* A read that ran too long is not a barcode: reject it, but keep the
+   line count, the position and the learnt levels running. */
+LOCAL BC_RESULT bc_abort_long_read(BC_READER *r, BOOL level, INT *reason)
+{
+	UW	keep_bars = r->bars;
+	UW	keep_rx = r->recross;
+	W	keep_pos = r->pos;
+	W	keep_hi = r->lvl_hi16;
+	W	keep_lo = r->lvl_lo16;
+
+	*reason = C39_ERR_COUNT;
+	bc_reader_reset(r);
+	r->bars = keep_bars;	/* the line count runs on */
+	r->recross = keep_rx;
+	r->pos = keep_pos;
+	r->lvl_hi16 = keep_hi;
+	r->lvl_lo16 = keep_lo;
+	r->edge_pos = keep_pos;
+	r->black = (level) ? TRUE : FALSE;
+	return BCR_REJECT;
+}
+
+/* One step of the reader state machine after the edge handling */
+LOCAL BC_RESULT bc_state_step(BC_READER *r, BOOL level,
+			      UB *letter, INT *reason)
+{
+	UW	end_um;
 
 	switch (r->state) {
 	case BCS_WAIT_GAP:
@@ -417,7 +455,8 @@ EXPORT BC_RESULT bc_reader_feed(BC_READER *r, INT n_r, W um,
 		   element has been measured (not for a stripe as wide as a
 		   junction line: that keeps 2x, so junctions are reported as
 		   soon as before). */
-		end_um = r->max_um * (((r->n < 2) && (r->max_um < BC_JUNCTION_MIN_UM)) ? 4U : 2U);
+		end_um = r->max_um * (((r->n < 2) &&
+			(r->max_um < BC_JUNCTION_MIN_UM)) ? 4U : 2U);
 		if (end_um < BC_QUIET_MIN_UM) {
 			end_um = BC_QUIET_MIN_UM;
 		}
@@ -426,28 +465,41 @@ EXPORT BC_RESULT bc_reader_feed(BC_READER *r, INT n_r, W um,
 		}
 		if ((r->samples > BC_MAX_SAMPLES) ||
 		    ((r->pos - r->start_pos) > BC_MAX_READ_UM)) {
-			UW	keep_bars = r->bars;
-			UW	keep_rx = r->recross;
-			W	keep_pos = r->pos;
-			W	keep_hi = r->lvl_hi16;
-			W	keep_lo = r->lvl_lo16;
-
-			*reason = C39_ERR_COUNT;
-			bc_reader_reset(r);
-			r->bars = keep_bars;	/* the line count runs on */
-			r->recross = keep_rx;
-			r->pos = keep_pos;
-			r->lvl_hi16 = keep_hi;
-			r->lvl_lo16 = keep_lo;
-			r->edge_pos = keep_pos;
-			r->black = (level) ? TRUE : FALSE;
-			return BCR_REJECT;
+			return bc_abort_long_read(r, level, reason);
 		}
 		break;
 	default:
 		break;
 	}
 	return BCR_NONE;
+}
+
+EXPORT BC_RESULT bc_reader_feed(BC_READER *r, INT n_r, W um,
+				UB *letter, INT *reason)
+{
+	BOOL	level = r->black;
+	W	w;
+	INT	black_n = LINE_BLACK_N;
+	INT	white_n = LINE_WHITE_N;
+
+#if BC_ADAPT
+	bc_adapt_levels(r, n_r, um, &black_n, &white_n);
+#endif
+	/* Threshold with hysteresis (VA2): edge noise cannot split a bar */
+	if (r->black && (n_r < white_n)) {
+		level = FALSE;
+	} else if (!r->black && (n_r > black_n)) {
+		level = TRUE;
+	}
+	r->pos += um;
+
+	if (level != r->black) {
+		bc_edge(r, level);
+	}
+	w = r->pos - r->edge_pos;
+	r->run_um = (w > 0) ? (UW)w : 0U;
+
+	return bc_state_step(r, level, letter, reason);
 }
 
 /* ---------------------------------------------------------------------
@@ -475,10 +527,12 @@ EXPORT W enc_dist_step(ENC_DIST *e, W cnt_l, W cnt_r, UW now_ms,
 	if (dt > 1000U) {
 		dt = 1000U;		/* long gap: cap the allowance */
 	}
-	limit = ((W)ENC_DIST_MAX_MM_S * (W)dt) + ENC_DIST_SLACK_UM;	/* mm/s x ms = µm */
-	if ((APP_ABS(dl) > limit) || (APP_ABS(dr) > limit)) {
+	/* mm/s x ms = µm */
+	limit = ((W)ENC_DIST_MAX_MM_S * (W)dt) + ENC_DIST_SLACK_UM;
+	if ((app_abs(dl) > limit) || (app_abs(dr) > limit)) {
 		e->rejects++;
-		return 0;		/* impossible jump: bad reading, drop it */
+		/* impossible jump: bad reading, drop it */
+		return 0;
 	}
 	return ((dl + dr) / 2) - (((dr - dl) * side_mm) / track_mm);
 }
@@ -542,13 +596,15 @@ EXPORT BOOL cross_feed_l(CROSS_DET *d, INT n_l, UW um, UW *back_um)
 			/* white -> black: a stripe starts.  Only a candidate
 			   after a quiet zone; a bar soon after a stripe means
 			   a barcode, so the candidate is dropped. */
-			if ((d->state == CXS_IDLE) && (d->run_um >= CROSS_QUIET_UM)) {
+			if ((d->state == CXS_IDLE) &&
+				(d->run_um >= CROSS_QUIET_UM)) {
 				d->state = CXS_STRIPE;
 				d->c_seen = FALSE;
 				d->r_seen = FALSE;
 			} else {
 				if (d->state == CXS_AFTER) {
-					d->reject = CXR_BAR_AFTER;	/* barcode */
+					/* barcode */
+					d->reject = CXR_BAR_AFTER;
 					d->reject_um = d->stripe_um;
 				}
 				d->state = CXS_IDLE;
@@ -556,11 +612,13 @@ EXPORT BOOL cross_feed_l(CROSS_DET *d, INT n_l, UW um, UW *back_um)
 		} else if (d->state == CXS_STRIPE) {
 			/* black -> white: the stripe ended; check its width */
 			d->stripe_um = d->run_um;
-			if ((d->run_um >= CROSS_MIN_UM) && (d->run_um <= CROSS_MAX_UM)) {
+			if ((d->run_um >= CROSS_MIN_UM) &&
+				(d->run_um <= CROSS_MAX_UM)) {
 				d->state = CXS_AFTER;
 			} else {
 				d->state = CXS_IDLE;
-				if (d->run_um >= 3000U) {	/* ignore specks */
+				/* ignore specks */
+				if (d->run_um >= 3000U) {
 					d->reject = CXR_NARROW;
 					d->reject_um = d->run_um;
 				}
@@ -581,7 +639,8 @@ EXPORT BOOL cross_feed_l(CROSS_DET *d, INT n_l, UW um, UW *back_um)
 		}
 	}
 	if ((d->state == CXS_STRIPE) && (d->run_um > CROSS_MAX_UM)) {
-		d->state = CXS_IDLE;		/* too long: not a crossing line */
+		/* too long: not a crossing line */
+		d->state = CXS_IDLE;
 		d->reject = CXR_WIDE;
 		d->reject_um = d->run_um;
 	}

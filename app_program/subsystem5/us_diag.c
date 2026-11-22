@@ -35,7 +35,7 @@ typedef struct {
 
 LOCAL void pad_pull(UINT pin, BOOL up, BOOL down)
 {
-	clr_w(GPIO(pin), GPIO_PUE | GPIO_PDE);
+	clr_w(GPIO(pin), (UW)GPIO_PUE | (UW)GPIO_PDE);
 	if (up) {
 		set_w(GPIO(pin), GPIO_PUE);
 	}
@@ -86,8 +86,12 @@ LOCAL void one_ping(UINT trig, UINT echo, PING_STATS *s)
 	}
 	tr = app_time_us();
 	s->rose++;
-	if ((tr - t0) < s->rise_min) s->rise_min = tr - t0;
-	if ((tr - t0) > s->rise_max) s->rise_max = tr - t0;
+	if ((tr - t0) < s->rise_min) {
+		s->rise_min = tr - t0;
+	}
+	if ((tr - t0) > s->rise_max) {
+		s->rise_max = tr - t0;
+	}
 
 	while (gpio_get_val(echo) != 0U) {
 		if ((app_time_us() - tr) > WAIT_FALL_US) {
@@ -143,6 +147,76 @@ LOCAL UW median_mm(const PING_STATS *s, UW *lo_mm, UW *hi_mm)
 	return drv_us_dur_to_mm(v[n / 2]);
 }
 
+/* What the measurements of one round point to */
+LOCAL void diag_verdict(INT e_idle, UINT pct_dn, UINT pct_up,
+			const PING_STATS *s, const PING_STATS *sx,
+			UW med, UW lo, UW hi)
+{
+	if (e_idle > 20) {
+		app_log((UB*)"usdiag: VERDICT: GP1 changes by itself %d "
+			     "times in 0.5 s. It is wired to some OTHER "
+			     "signal (e.g. a wheel encoder), not the "
+			     "ultrasonic ECHO. Check which Grove port each "
+			     "cable is in.\n", e_idle);
+	} else if (pct_dn > 90) {
+		app_log((UB*)"usdiag: VERDICT: ECHO (GP1) is stuck HIGH. "
+			     "Wrong wire on GP1, or a 5 V module holding it "
+			     "high. Check the white wire goes to the "
+			     "sensor's ECHO pin.\n");
+	} else if ((s->rose == 0) && (sx->rose >= (PINGS / 2))) {
+		app_log((UB*)"usdiag: VERDICT: TRIG and ECHO are SWAPPED. "
+			     "Swap the yellow and white wires (yellow = TRIG "
+			     "= GP0, white = ECHO = GP1).\n");
+	} else if ((s->rose == 0) && (pct_up > 90)) {
+		app_log((UB*)"usdiag: VERDICT: nothing on GP1 (it just "
+			     "follows the pull resistor) and no echo. The "
+			     "sensor is not connected to GP0/GP1, or has no "
+			     "power (red/black wires).\n");
+	} else if (s->rose == 0) {
+		app_log((UB*)"usdiag: VERDICT: the sensor never answers. "
+			     "Check power (VCC/GND), the Grove port (must be "
+			     "GP0/GP1), and that it is a 3.3 V type "
+			     "(HC-SR04P / RCWL-1601).\n");
+	} else if ((s->fell < s->rose) && (s->rise_min >= 100U)) {
+		app_log((UB*)"usdiag: VERDICT: wiring is RIGHT (trigger -> "
+			     "echo start %d us, as a real HC-SR04 does), but "
+			     "the sensor never HEARS its echo: ECHO stays "
+			     "high until it gives up. A hand at 20 cm must "
+			     "end the pulse. If it does not: a 5 V-only "
+			     "HC-SR04 on 3.3 V (too weak to receive), or a "
+			     "faulty sensor. Use a 3.3 V type (HC-SR04P / "
+			     "RCWL-1601) or power it from 5 V with a divider "
+			     "on ECHO.\n", (INT)s->rise_min);
+	} else if (s->fell < s->rose) {
+		app_log((UB*)"usdiag: VERDICT: ECHO starts but does not end "
+			     "(stuck high). Typical of a 5 V-only HC-SR04 on "
+			     "3.3 V, or a damaged module.\n");
+	} else if ((s->rise_max < 100U) && (med < 60U)) {
+		app_log((UB*)"usdiag: VERDICT: the echo starts almost at "
+			     "once (%d us) and is very short (%d mm). A real "
+			     "HC-SR04 waits ~200-500 us first. This is "
+			     "typical of a 5 V-only HC-SR04 on 3.3 V, or of "
+			     "electrical crosstalk between the TRIG and ECHO "
+			     "wires. Use a 3.3 V sensor (HC-SR04P).\n",
+			     (INT)s->rise_max, med);
+	} else if ((hi - lo) > 100U) {
+		app_log((UB*)"usdiag: VERDICT: answers, but readings jump "
+			     "around (%d-%d mm). Loose wire, or the beam is "
+			     "hitting something on the car. Hold a flat "
+			     "object at 20 cm and compare.\n", lo, hi);
+	} else if (med < 50U) {
+		app_log((UB*)"usdiag: VERDICT: answers steadily at %d mm. "
+			     "Something is RIGHT in front of the sensor "
+			     "(bracket, wires, car body) or it points at the "
+			     "floor. Move it or tilt it up, then move your "
+			     "hand: the distance must follow.\n", med);
+	} else {
+		app_log((UB*)"usdiag: VERDICT: OK - steady echo at %d mm. "
+			     "Move your hand in front (10, 20, 30 cm): the "
+			     "next rounds must follow it.\n", med);
+	}
+}
+
 LOCAL void diag_round(INT round)
 {
 	PING_STATS	s, sx;
@@ -166,16 +240,19 @@ LOCAL void diag_round(INT round)
 	pad_pull(US_ECHO_PIN, FALSE, TRUE);
 	tk_dly_tsk(5);
 	e_idle = count_edges(US_ECHO_PIN, 500U, &pct_idle);
-	app_log((UB*)"usdiag: ECHO idle: pull-down %d%% high, pull-up %d%% high, %d changes in 0.5 s without any trigger\n",
+	app_log((UB*)"usdiag: ECHO idle: pull-down %d%% high, pull-up %d%% "
+		     "high, %d changes in 0.5 s without any trigger\n",
 		pct_dn, pct_up, e_idle);
 	(void)e_dn; (void)e_up;
 
 	/* 2. normal pings */
 	run_pings(US_TRIG_PIN, US_ECHO_PIN, &s);
 	med = median_mm(&s, &lo, &hi);
-	app_log((UB*)"usdiag: normal: echo started %d/%d, ended %d/%d, start delay %d-%d us, distance %d mm (range %d-%d)\n",
+	app_log((UB*)"usdiag: normal: echo started %d/%d, ended %d/%d, start "
+		     "delay %d-%d us, distance %d mm (range %d-%d)\n",
 		s.rose, PINGS, s.fell, PINGS,
-		(s.rose > 0) ? (INT)s.rise_min : 0, (INT)s.rise_max, med, lo, hi);
+		(s.rose > 0) ? (INT)s.rise_min : 0, (INT)s.rise_max, med,
+		lo, hi);
 
 	/* 3. swapped: GP1 drives, GP0 listens */
 	gpio_set_pin(US_ECHO_PIN, GPIO_MODE_OUT);
@@ -185,7 +262,8 @@ LOCAL void diag_round(INT round)
 	tk_dly_tsk(5);
 	run_pings(US_ECHO_PIN, US_TRIG_PIN, &sx);
 	medx = median_mm(&sx, &lox, &hix);
-	app_log((UB*)"usdiag: swapped test (GP1 as TRIG, GP0 as ECHO): echo started %d/%d, distance %d mm\n",
+	app_log((UB*)"usdiag: swapped test (GP1 as TRIG, GP0 as ECHO): echo "
+		     "started %d/%d, distance %d mm\n",
 		sx.rose, PINGS, medx);
 	/* restore */
 	pad_pull(US_TRIG_PIN, FALSE, FALSE);
@@ -195,30 +273,7 @@ LOCAL void diag_round(INT round)
 	pad_pull(US_ECHO_PIN, FALSE, TRUE);
 	(void)lox; (void)hix;
 
-	/* 4. verdict */
-	if (e_idle > 20) {
-		app_log((UB*)"usdiag: VERDICT: GP1 changes by itself %d times in 0.5 s. It is wired to some OTHER signal (e.g. a wheel encoder), not the ultrasonic ECHO. Check which Grove port each cable is in.\n", e_idle);
-	} else if (pct_dn > 90) {
-		app_log((UB*)"usdiag: VERDICT: ECHO (GP1) is stuck HIGH. Wrong wire on GP1, or a 5 V module holding it high. Check the white wire goes to the sensor's ECHO pin.\n");
-	} else if ((s.rose == 0) && (sx.rose >= (PINGS / 2))) {
-		app_log((UB*)"usdiag: VERDICT: TRIG and ECHO are SWAPPED. Swap the yellow and white wires (yellow = TRIG = GP0, white = ECHO = GP1).\n");
-	} else if ((s.rose == 0) && (pct_up > 90)) {
-		app_log((UB*)"usdiag: VERDICT: nothing on GP1 (it just follows the pull resistor) and no echo. The sensor is not connected to GP0/GP1, or has no power (red/black wires).\n");
-	} else if (s.rose == 0) {
-		app_log((UB*)"usdiag: VERDICT: the sensor never answers. Check power (VCC/GND), the Grove port (must be GP0/GP1), and that it is a 3.3 V type (HC-SR04P / RCWL-1601).\n");
-	} else if ((s.fell < s.rose) && (s.rise_min >= 100U)) {
-		app_log((UB*)"usdiag: VERDICT: wiring is RIGHT (trigger -> echo start %d us, as a real HC-SR04 does), but the sensor never HEARS its echo: ECHO stays high until it gives up. A hand at 20 cm must end the pulse. If it does not: a 5 V-only HC-SR04 on 3.3 V (too weak to receive), or a faulty sensor. Use a 3.3 V type (HC-SR04P / RCWL-1601) or power it from 5 V with a divider on ECHO.\n", (INT)s.rise_min);
-	} else if (s.fell < s.rose) {
-		app_log((UB*)"usdiag: VERDICT: ECHO starts but does not end (stuck high). Typical of a 5 V-only HC-SR04 on 3.3 V, or a damaged module.\n");
-	} else if ((s.rise_max < 100U) && (med < 60U)) {
-		app_log((UB*)"usdiag: VERDICT: the echo starts almost at once (%d us) and is very short (%d mm). A real HC-SR04 waits ~200-500 us first. This is typical of a 5 V-only HC-SR04 on 3.3 V, or of electrical crosstalk between the TRIG and ECHO wires. Use a 3.3 V sensor (HC-SR04P).\n", (INT)s.rise_max, med);
-	} else if ((hi - lo) > 100U) {
-		app_log((UB*)"usdiag: VERDICT: answers, but readings jump around (%d-%d mm). Loose wire, or the beam is hitting something on the car. Hold a flat object at 20 cm and compare.\n", lo, hi);
-	} else if (med < 50U) {
-		app_log((UB*)"usdiag: VERDICT: answers steadily at %d mm. Something is RIGHT in front of the sensor (bracket, wires, car body) or it points at the floor. Move it or tilt it up, then move your hand: the distance must follow.\n", med);
-	} else {
-		app_log((UB*)"usdiag: VERDICT: OK - steady echo at %d mm. Move your hand in front (10, 20, 30 cm): the next rounds must follow it.\n", med);
-	}
+	diag_verdict(e_idle, pct_dn, pct_up, &s, &sx, med, lo, hi);
 }
 
 EXPORT void us_diag(void)
@@ -230,7 +285,8 @@ EXPORT void us_diag(void)
 	(void)tk_chg_pri(TSK_SELF, 30);
 	scan_hold = 1;		/* scan_task stops pinging: we own GP0/GP1 */
 	tk_dly_tsk(500);
-	app_log((UB*)"usdiag: ultrasonic diagnostic. The car will not drive. A new round every 5 s.\n");
+	app_log((UB*)"usdiag: ultrasonic diagnostic. The car will not drive. "
+		     "A new round every 5 s.\n");
 	while (1) {
 		diag_round(round++);
 		tk_dly_tsk(5000);

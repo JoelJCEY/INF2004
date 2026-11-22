@@ -28,10 +28,11 @@
 
 #define LIFT_UP_MG		200	/* upward push to count as a lift   */
 #define LIFT_UP_HUMP_MG		400	/* while crossing a hump (landing)  */
-#define LIFT_AVG_N		6	/* readings averaged (6 x 20 ms; 13 Nov, was 4) */
-#define LIFT_UP_N		5	/* (13 Nov, was 3) ...and at least this many of them
-					   over the limit: a lift is a steady
-					   push, a bump is one or two readings */
+/* readings averaged (6 x 20 ms; 13 Nov, was 4) */
+#define LIFT_AVG_N		6
+/* (13 Nov, was 3) ...and at least this many of them over the limit: a lift is a
+   steady push, a bump is one or two readings */
+#define LIFT_UP_N		5
 #define LIFT_TILT_COS1000	500	/* cos(60 deg): tilted this far     */
 #define LIFT_TILT_N		3	/* readings in a row (60 ms)        */
 
@@ -56,6 +57,7 @@ typedef struct {
 IMPORT void        lift_init(LIFT_DET *d, W x0, W y0, W z0);
 /* raw: this reading (mg).  filt: low-pass filtered reading (mg).
    on_hump: TRUE while the hump detector is not LEVEL. */
-IMPORT LIFT_RESULT lift_update(LIFT_DET *d, const W raw[3], const W filt[3], BOOL on_hump);
+IMPORT LIFT_RESULT lift_update(LIFT_DET *d, const W raw[3], const W filt[3],
+	BOOL on_hump);
 
 #endif /* LIFT_H */

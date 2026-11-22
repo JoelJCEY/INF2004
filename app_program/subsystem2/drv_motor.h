@@ -36,7 +36,8 @@
 #define MOTOR_DUTY_MAX		1000	/* duty in permille, signed */
 
 /* Set to 1 if a wheel turns the wrong way and its wires cannot be swapped */
-#define MOTOR_L_INVERT		1	/* left motor spins backward on forward duty */
+/* left motor spins backward on forward duty */
+#define MOTOR_L_INVERT		1
 #define MOTOR_R_INVERT		0
 
 #define MOTOR_LEFT		0
