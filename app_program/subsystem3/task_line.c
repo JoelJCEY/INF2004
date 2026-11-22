@@ -19,35 +19,28 @@
 #include "../subsystem2/subsystem2.h"	/* IF-07 odometry */
 #include "../subsystem2/motion_ctrl.h"	/* MOTION_UM_PER_COUNT */
 #include "../subsystem5/subsystem5.h"	/* IF-09, flg_sys */
+#include "../subsystem5/ctrl_logic.h"	/* ctrl_is_active (16 Nov lift check) */
 
 #define LOST_TIME_MS		10000U	/* no line for 10 s of driving: LINE LOST (car stops), 28 Oct (was 200 mm) */
-/* No sensor sees the line: 0 = drive STRAIGHT (team choice, 28 Oct:
-   "go straight, only steer when a sensor sees the line"),
-   1 = keep turning toward the side the line was last seen */
-#define LINE_LOST_SEARCH	0
-/* With only IR_C and IR_R following the line, a line that slips LEFT
-   is only seen as "lost".  For the first LOST_RECOVER_MM the car turns
-   back toward where it last saw the line, then drives straight.
-   0 = always straight. */
-#define LOST_RECOVER_MM		100U	/* unused since 31 Oct: see LOST_SEARCH */
-/* 31 Oct: line lost = FAN SEARCH between two boundaries.
-     0  straight for LOST_GRACE_MM (a short gap is not a lost line)
-     1  spin toward the side the line was last seen, up to LOST_SEARCH_DEG
-     2  not there: spin back the other way, past centre, to the other
-        boundary (2 x LOST_SEARCH_DEG)
-     3  not there either: spin back to the start heading
-     4  give up searching: straight on as before; LINE LOST after
-        LOST_TIME_MS of driving
-   Any sensor seeing black ends the search at once.  Angles come from
-   wheel travel: on the spot each wheel moves track/2 x angle and path_mm
-   is the average of both, so 1 deg = 117 x pi / 360 = 1.02 mm. */
-#define LOST_GRACE_MM		15U
-#define LOST_SEARCH_DEG		90U
-#define LOST_DEG_TO_MM(d)	((MOTION_TRACK_MM * 314U * (d)) / 36000U)
-/* After a junction (centre + right black) keep straight this far */
-#define JUNCTION_HOLD_MM	100U
-/* Right sensor alone this far before steering right (crossing lines) */
-#define R_ONLY_CONFIRM_MM	30U
+/* C and R are digital line sensors. A left curve uses a forward rolling
+   correction when the middle loses black and R is white. Right-side gap
+   recovery is retained below. The 10-second line-lost fault is unchanged. */
+#define ROLLING_CURVE_ERR 600 /* same magnitude as right-only correction */
+#define JUNCTION_HOLD_MM 100U
+/* 16 Nov: lifted check from the IR sensors.  Held in the air, nothing
+   reflects, so all three sensors read BLACK while the wheels keep
+   turning.  On the mat all three are black together only on a crossing
+   line (under ~90 mm).  Longer than this while driving = lifted. */
+#define IR_LIFT_MM	250U
+
+/* Existing right-side gap/search behavior is retained. */
+#define LOST_GRACE_MM 15U
+#define LOST_SEARCH_DEG 90U
+#define LOST_DEG_TO_MM(d) ((MOTION_TRACK_MM * 314U * (d)) / 36000U)
+#define LOST_SEARCH_DELAY_MS 1500U
+#define LOST_RECOVERY_START_ERR 180
+#define LOST_RECOVERY_MAX_ERR 600
+#define LOST_RECOVERY_RAMP_MS 1000U
 
 EXPORT volatile UW line_latest;
 EXPORT volatile UW line_cal_request;
@@ -215,6 +208,18 @@ LOCAL INT sensor_norm(UINT i, INT raw)
 		return (high == (IR_C_DO_BLACK_HIGH ? TRUE : FALSE)) ? 1000 : 0;
 	}
 #endif
+#if IR_R_DIGITAL
+	if (i == 2U) {
+		/* 16 Nov: RIGHT is on its module's DO pin (about 0 or 4095 on
+		   the ADC).  Fixed scale, not the start-up sweep: a sweep in
+		   which RIGHT saw only black (car started off the mat or in
+		   the hand) set its "white" to 4085 and it never read black
+		   again until the next restart. */
+		INT n = (raw * 1000) / 4095;
+
+		return APP_CLAMP(n, 0, 1000);
+	}
+#endif
 	return line_normalise(&cal, i, raw);
 }
 
@@ -233,16 +238,14 @@ EXPORT void line_task(INT stacd, void *exinf)
 	BOOL	on_line;
 	BOOL	lost_mode = FALSE;
 	BOOL	lost_reported = FALSE;
-	UW	lost_ms = 0;		/* driving time without the line */
-	UW	lost_start_mm = 0;
-	UW	lost_mm = 0;
-	UINT	search_leg = 0;		/* fan search step, see LOST_SEARCH_DEG */
+	UINT	search_leg = 0;
 	UW	leg_start_mm = 0;
+	UW	lost_ms = 0;		/* driving time without the line */
 	UW	junction_until_mm = 0;
-	BOOL	r_only = FALSE;
-	UW	r_only_start_mm = 0;
 	UW	ignore_until_mm = 0;
 	UW	path_mm;
+	UW	early_until_mm = 0;	/* 16 Nov: C+R early hold ends here */
+	BOOL	early_hold = FALSE;
 	UW	um_per_sample;
 	W	bc_um;			/* IR_L's own travel per sample, signed */
 	W	bc_left = 0;		/* IR_L travel this cycle not yet given */
@@ -259,6 +262,8 @@ EXPORT void line_task(INT stacd, void *exinf)
 	UW	bars_now = 0;		/* lines scanned, see line_bar_pass */
 	UW	bars_last = 0;
 	UW	white_ms = 0;
+	LINE_TRACK track = {0};
+	BOOL crossing;
 
 	(void)stacd; (void)exinf;
 
@@ -321,6 +326,9 @@ EXPORT void line_task(INT stacd, void *exinf)
 		}
 		if (bc_paused) {
 			bc_left = 0;
+			/* A sensor sweeping sideways during a pivot is not travelling
+			   along a crossing stripe. Discard that candidate as well. */
+			cross_reset(&cross);
 		}
 		{
 			UW	i;
@@ -437,18 +445,38 @@ EXPORT void line_task(INT stacd, void *exinf)
 				{
 					UW back_um = 0;
 
-					if (cross_feed_l(&cross, n_r, um_per_sample, &back_um) &&
-					    BARCODE_ACTIONS) {
+					/* Use the same adaptive AO black/white decision as
+					   barcode decoding. A weak IR_L can decode a barcode
+					   yet never exceed the old fixed junction threshold. */
+					if (!bc_paused && cross_feed_l(&cross,
+						reader.black ? 1000 : 0, um_per_sample, &back_um)) {
 						UW mid_mm = path_mm - (back_um / 1000U);
 
-						app_log((UB*)"line: CROSS-JUNCTION, middle at %d mm\n", mid_mm);
-						send_nav_at(NAV_JUNCTION_CROSS, BC_NONE, 0, 0, mid_mm);
+						junction_until_mm = path_mm + JUNCTION_HOLD_MM;
+						if (BARCODE_ACTIONS) {
+							app_log((UB*)"line: CROSS-JUNCTION, middle at %d mm\n", mid_mm);
+							send_nav_at(NAV_JUNCTION_CROSS, BC_NONE, 0, 0, mid_mm);
+						}
+					}
+					/* 16 Nov: say why a crossing candidate was dropped */
+					if (cross.reject != CXR_NONE) {
+						static const char *const why[] = {
+							"", "stripe too narrow", "stripe too wide",
+							"more bars after it (barcode)",
+							"centre/right did not see black"
+						};
+						app_log((UB*)"line: cross? no: %s (%d mm)\n",
+							why[(cross.reject <= CXR_NO_CR) ? cross.reject : 0U],
+							(INT)(cross.reject_um / 1000U));
+						cross.reject = CXR_NONE;
 					}
 				}
 			} else {
 				/* IR_C / IR_R sample: tells the detector the crossing
 				   line also runs under the centre and the right */
-				cross_feed_cr(&cross, chan, sensor_norm(chan, raw), um_per_sample);
+				if (!bc_paused) {
+					cross_feed_cr(&cross, chan, sensor_norm(chan, raw), um_per_sample);
+				}
 			}
 			rd++;
 		}
@@ -492,6 +520,56 @@ EXPORT void line_task(INT stacd, void *exinf)
 		line_norm[0] = (UW)n_l;
 		line_norm[1] = (UW)n_c;
 		line_norm[2] = (UW)n_r;
+		/* On an angled approach R may see the transverse stripe before
+		   C/L. Retain their recent evidence until the candidate resolves,
+		   instead of steering into the right branch while waiting for
+		   the full trailing quiet zone needed by NAV_JUNCTION_CROSS. */
+		/* 16 Nov: lifted check (IR_LIFT_MM above) */
+		{
+			static UW	black_from_mm;
+			static BOOL	lift_sent;
+			T_RFLG		rf;
+			BOOL		all_black = ((n_l >= LINE_BLACK_N) && (n_c >= LINE_BLACK_N) &&
+						     (n_r >= LINE_BLACK_N)) ? TRUE : FALSE;
+
+			(void)tk_ref_flg(flg_sys, &rf);
+			if (!all_black || ((rf.flgptn & EVF_HUMP_ACTIVE) != 0U)) {
+				black_from_mm = path_mm;
+				lift_sent = FALSE;
+			} else if (!lift_sent && ((path_mm - black_from_mm) >= IR_LIFT_MM)) {
+				MISSION_STATE	ms;
+
+				lift_sent = TRUE;
+				ctrl_get_mission(&ms);
+				if (ctrl_is_active((VEHICLE_STATE)ms.state)) {
+					app_log((UB*)"line: all 3 IR sensors black for %d mm (no floor): LIFTED, motors stop\n",
+						(INT)(path_mm - black_from_mm));
+					app_report_fault(FLT_LIFTED);
+				}
+			} else {
+				/* keep counting */
+			}
+		}
+		crossing = cross_hold_heading(&cross);
+		/* 16 Nov: C and R both black = maybe a crossing line arriving
+		   at an angle, right side first.  Do not steer right for
+		   CROSS_EARLY_HOLD_MM, so IR_L still reaches the stripe and the
+		   detector above can confirm it.  Left corrections still work,
+		   so a real right curve only runs straight for a few cm. */
+		{
+			static BOOL	cr_both;
+			static UW	next_ok_mm;
+			BOOL		both = ((n_c >= LINE_BLACK_N) && (n_r >= LINE_BLACK_N)) ? TRUE : FALSE;
+
+			if (both && !cr_both && !bc_paused &&
+			    ((W)(path_mm - next_ok_mm) >= 0) &&
+			    ((W)(path_mm - junction_until_mm) >= 0)) {
+				early_until_mm = path_mm + CROSS_EARLY_HOLD_MM;
+				next_ok_mm = path_mm + CROSS_EARLY_GAP_MM;
+			}
+			cr_both = both;
+			early_hold = ((W)(path_mm - early_until_mm) < 0) ? TRUE : FALSE;
+		}
 		/* Line following uses IR_C and IR_R only; IR_L reads barcodes */
 #if LINE_RIGHT_EDGE_ONLY
 		{
@@ -507,8 +585,6 @@ EXPORT void line_task(INT stacd, void *exinf)
 				err = -EDGE_STEER;	/* on the line: ease right */
 				last_sign = -1;
 				(void)junction_until_mm;
-				(void)r_only;
-				(void)r_only_start_mm;
 				on_line = TRUE;
 			} else {
 				err = EDGE_STEER;	/* off it: ease left */
@@ -517,44 +593,24 @@ EXPORT void line_task(INT stacd, void *exinf)
 			}
 		}
 #else
-		err = line_error(0, n_c, n_r, &on_line);
+		err = line_track_step(&track, n_c, n_r, &on_line);
 		{
-			/* Junction rule (team, 28 Oct): centre AND right on black
-			   = a crossing or branch: drive STRAIGHT through it, and
-			   ignore the right sensor for JUNCTION_HOLD_MM after it */
-			BOOL	jc = (n_c >= LINE_BLACK_N) ? TRUE : FALSE;
-			BOOL	jr = (n_r >= LINE_BLACK_N) ? TRUE : FALSE;
+			/* C+R overlap is normal on a right curve. Suppress steering
+			   only after the separate cross detector confirms a junction. */
+			BOOL	jc = track.centre;
+			BOOL	jr = track.right;
 
-			if (jc && jr) {
-				if ((W)(path_mm - junction_until_mm) >= 0) {
-					app_log((UB*)"line: junction at %d mm, going straight\n", path_mm);
-				}
-				junction_until_mm = path_mm + JUNCTION_HOLD_MM;
-				err = 0;
-			} else if (((W)(path_mm - junction_until_mm) < 0) && (err < 0)) {
+			if (crossing || ((early_hold || ((W)(path_mm - junction_until_mm) < 0)) && (err < 0))) {
 				err = 0;	/* still crossing: right sensor ignored */
 			} else {
 				/* normal rule */
 			}
 
-			/* Right sensor alone must last R_ONLY_CONFIRM_MM before the
-			   car steers right: a crossing line (about 20 mm wide)
-			   passes under it in less, a real drift lasts longer */
-			if (jr && !jc) {
-				if (!r_only) {
-					r_only = TRUE;
-					r_only_start_mm = path_mm;
-				}
-				if ((path_mm - r_only_start_mm) < R_ONLY_CONFIRM_MM) {
-					err = 0;
-				}
-			} else {
-				r_only = FALSE;
-			}
+			/* A real right drift needs correction immediately. */
 			/* side for recovery: right sensor last = line right.
 			   Not updated inside a junction: the crossing line must
 			   not decide which way to search afterwards. */
-			if ((W)(path_mm - junction_until_mm) >= 0) {
+			if (!crossing && !early_hold && ((W)(path_mm - junction_until_mm) >= 0)) {
 				if (jr) {
 					last_sign = -1;
 				} else if (jc) {
@@ -580,19 +636,21 @@ EXPORT void line_task(INT stacd, void *exinf)
 			lost_reported = FALSE;
 			flags |= LINE_F_ON_LINE;
 		} else {
-			/* Both white: keep the last known side, saturated */
+			/* Both line sensors white: keep rolling toward the last side. */
 			if (!lost_mode) {
 				lost_mode = TRUE;
 				lost_ms = 0;
-				lost_start_mm = path_mm;
 				search_leg = 0;
 				leg_start_mm = path_mm;
 			}
 			if (APP_ABS(motion_speed_avg()) > 5) {
 				lost_ms += S3_PERIOD_MS;	/* only while moving */
 			}
-			lost_mm = path_mm - lost_start_mm;
-			(void)lost_mm;
+			if (last_sign > 0) {
+				/* Middle/right white after centre-only: left rolling arc.
+				   Mirror the right-only 600 error without a pivot request. */
+				err = ROLLING_CURVE_ERR;
+			} else
 			/* Fan search between two boundaries (31 Oct) */
 			{
 				UW	leg = path_mm - leg_start_mm;
@@ -606,7 +664,8 @@ EXPORT void line_task(INT stacd, void *exinf)
 				case 3:	need = LOST_DEG_TO_MM(LOST_SEARCH_DEG);	side = 1;  break;
 				default: need = 0;				side = 0;  break;
 				}
-				if ((search_leg <= 3U) && (leg >= need)) {
+				if ((search_leg <= 3U) && (leg >= need) &&
+				    ((search_leg != 0U) || (lost_ms >= LOST_SEARCH_DELAY_MS))) {
 					search_leg++;
 					leg_start_mm = path_mm;
 					if (search_leg == 1U) {
@@ -626,11 +685,19 @@ EXPORT void line_task(INT stacd, void *exinf)
 					       (search_leg == 3U) ? 1 : 0;
 				}
 				err = side * last_sign * LINE_ERR_MAX;	/* full = spin */
+				if (search_leg == 0U) {
+					UW ramp_ms = (lost_ms < LOST_RECOVERY_RAMP_MS) ?
+						lost_ms : LOST_RECOVERY_RAMP_MS;
+					/* C/ R cannot see a line that has moved left. Tighten
+					   a rolling arc gradually before resorting to a pivot. */
+					err = last_sign * (LOST_RECOVERY_START_ERR +
+						(INT)(ramp_ms * (LOST_RECOVERY_MAX_ERR -
+						LOST_RECOVERY_START_ERR) / LOST_RECOVERY_RAMP_MS));
+				}
 			}
 #if !LINE_RIGHT_EDGE_ONLY
-			if ((W)(path_mm - junction_until_mm) < 0) {
+			if (crossing || ((W)(path_mm - junction_until_mm) < 0)) {
 				err = 0;	/* just crossed a junction: straight on */
-				lost_start_mm = path_mm;	/* search starts after it */
 				search_leg = 0;
 				leg_start_mm = path_mm;
 			}

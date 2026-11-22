@@ -55,6 +55,9 @@
 #ifndef MQTT_TOPIC_SWEEP
 #define MQTT_TOPIC_SWEEP	"is11/car/sweep"
 #endif
+#ifndef MQTT_TOPIC_IMU
+#define MQTT_TOPIC_IMU		"is11/car/imu"	/* live lift / tilt (13 Nov) */
+#endif
 #ifndef MQTT_TOPIC_BC
 #define MQTT_TOPIC_BC		"is11/car/bc"	/* last barcode read widths */
 #endif
@@ -98,6 +101,11 @@ __attribute__((weak)) int comms_bridge_ir_text(unsigned char *buf, int max)
 	return 0;
 }
 __attribute__((weak)) int comms_bridge_us_text(unsigned char *buf, int max)
+{
+	(void)buf; (void)max;
+	return 0;
+}
+__attribute__((weak)) int comms_bridge_imu_text(unsigned char *buf, int max)
 {
 	(void)buf; (void)max;
 	return 0;
@@ -223,6 +231,11 @@ static void pump_timeout(void *arg)
 			n = comms_bridge_us_text(ir, (int)sizeof(ir));
 			if (n > 0) {
 				(void)mqtt_publish(client, MQTT_TOPIC_US, ir, (u16_t)n,
+						   0 /* qos */, 0 /* retain */, NULL, NULL);
+			}
+			n = comms_bridge_imu_text(ir, (int)sizeof(ir));
+			if (n > 0) {
+				(void)mqtt_publish(client, MQTT_TOPIC_IMU, ir, (u16_t)n,
 						   0 /* qos */, 0 /* retain */, NULL, NULL);
 			}
 		}

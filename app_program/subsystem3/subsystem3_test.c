@@ -137,6 +137,54 @@ LOCAL BC_RESULT wiggle_read(UW every_um, UW back_um, UB *letter, INT *bars)
 	return res;
 }
 
+
+/* 13 Nov (IR_L on AO): read one letter through an analogue sensor.  The
+   floor under a spot spot_um wide is averaged (smooth ramps at every
+   edge), black reaches only `peak` after calibration, plus +-40 noise.
+   Narrow 5 mm, wide 12.5 mm, 300 um per sample.  Returns the letter or 0. */
+LOCAL UW ao_seed = 12345U;
+LOCAL INT ao_noise(INT amp)
+{
+	ao_seed = (ao_seed * 1103515245U) + 12345U;
+	return (INT)((ao_seed >> 16) % (UW)(2 * amp + 1)) - amp;
+}
+LOCAL UB ao_read(UH pat, BOOL backwards, W spot_um, INT peak)
+{
+	BC_READER	r;
+	UW		w[CODE39_ELEMENTS];
+	W		edge[CODE39_ELEMENTS + 1];
+	W		pos, end;
+	INT		i, j, reason = 0;
+	UB		letter = 0, got = 0;
+
+	build_symbol(pat, w);
+	for (i = 0; i < CODE39_ELEMENTS; i++) {
+		w[i] = (w[i] == NARROW_UM) ? 5000U : 12500U;
+	}
+	edge[0] = 30000;
+	for (i = 0; i < CODE39_ELEMENTS; i++) {
+		edge[i + 1] = edge[i] + (W)w[backwards ? (CODE39_ELEMENTS - 1 - i) : i];
+	}
+	end = edge[CODE39_ELEMENTS] + 40000;
+	bc_reader_reset(&r);
+	for (pos = 0; pos < end; pos += 300) {
+		INT	blk = 0, n;
+
+		for (j = 0; j < 9; j++) {		/* spot: 9 points across */
+			W x = pos - (spot_um / 2) + ((spot_um * j) / 8);
+			for (i = 0; i < CODE39_ELEMENTS; i += 2) {
+				if ((x >= edge[i]) && (x < edge[i + 1])) blk++;
+			}
+		}
+		n = ((blk * peak) / 9) + ao_noise(40);
+		n = APP_CLAMP(n, 0, 1000);
+		if (bc_reader_feed(&r, n, 300, &letter, &reason) == BCR_BARCODE) {
+			got = letter;
+		}
+	}
+	return got;
+}
+
 EXPORT void subsystem3_test(void)
 {
 	UW		w[CODE39_ELEMENTS];
@@ -150,6 +198,41 @@ EXPORT void subsystem3_test(void)
 	UW		map;
 
 	TEST_INIT();
+	{
+		LINE_TRACK t = {0};
+		INT weak, strong;
+		(void)line_track_step(&t, 1000, 0, &on_line);
+		(void)line_track_step(&t, 1000, 0, &on_line);
+		TEST_CHECK("S3-S01", on_line && t.centre,
+			   "stable centre acquires the line");
+		(void)line_track_step(&t, 0, 0, &on_line);
+		TEST_CHECK("S3-S02", on_line && t.centre,
+			   "one white DO glitch does not lose the line");
+		(void)line_track_step(&t, 1000, 0, &on_line);
+		(void)line_track_step(&t, 0, 0, &on_line);
+		(void)line_track_step(&t, 0, 0, &on_line);
+		TEST_CHECK("S3-S03", !on_line && !t.centre,
+			   "sustained loss is still detected");
+		weak = line_track_step(&t, 0, 420, &on_line);
+		strong = line_track_step(&t, 0, 1000, &on_line);
+		TEST_CHECK("S3-S04", weak < 0 && strong < weak && strong == -600,
+			   "right AO ramps steering in the correct direction");
+		(void)line_track_step(&t, 0, 330, &on_line);
+		TEST_CHECK("S3-S05", on_line && t.right,
+			   "right AO hysteresis rejects threshold chatter");
+		(void)line_track_step(&t, 0, 200, &on_line);
+		TEST_CHECK("S3-S06", !on_line && !t.right,
+			   "right AO releases below the white threshold");
+		(void)line_track_step(&t, 1000, 0, &on_line);
+		(void)line_track_step(&t, 1000, 0, &on_line);
+		weak = line_track_step(&t, 1000, 650, &on_line);
+		TEST_CHECK("S3-S07", on_line && weak < 0 && weak >= -200,
+			   "centre+right overlap starts a gentle right curve");
+		(void)line_track_step(&t, 0, 650, &on_line);
+		strong = line_track_step(&t, 0, 650, &on_line);
+		TEST_CHECK("S3-S08", on_line && strong < weak,
+			   "right curve correction strengthens when centre leaves");
+	}
 
 	/* S3-U01: '*A*' decodes forwards */
 	build_symbol(0x109, w);
@@ -298,6 +381,33 @@ EXPORT void subsystem3_test(void)
 		TEST_CHECK("S3-U13", (d1 == 16 * 74) && (d2 > 0) && (d2 < (18 * 74)) &&
 			   (d3 < 0) && (d4 == 0) && (e.rejects == 1U),
 			   "encoder distance: exact travel, slower/backwards IR_L when steering, jump dropped");
+	}
+
+	/* S3-U14 (13 Nov): IR_L on AO.  Every letter, both directions,
+	   with smooth analogue edges (4 mm spot) and noise, whether black
+	   calibrates to full scale (1000) or the borrowed calibration is
+	   off (black only 700 or 500): all decode. */
+	{
+		static const UH pat_az2[26] = {
+			0x109, 0x049, 0x148, 0x019, 0x118, 0x058, 0x00D, 0x10C,
+			0x04C, 0x01C, 0x103, 0x043, 0x142, 0x013, 0x112, 0x052,
+			0x007, 0x106, 0x046, 0x016, 0x181, 0x0C1, 0x1C0, 0x091,
+			0x190, 0x0D0 };
+		INT	k, pk, ok[3] = {0, 0, 0};
+		const INT peaks[3] = {1000, 700, 500};
+
+		for (pk = 0; pk < 3; pk++) {
+			for (k = 0; k < 26; k++) {
+				if ((ao_read(pat_az2[k], FALSE, 4000, peaks[pk]) == (UB)('A' + k)) &&
+				    (ao_read(pat_az2[k], TRUE, 4000, peaks[pk]) == (UB)('A' + k))) {
+					ok[pk]++;
+				}
+			}
+		}
+		tm_printf((UB*)"[TEST] S3 info: AO reads (both ways) black 1000: %d/26, 700: %d/26, 500: %d/26\n",
+			  ok[0], ok[1], ok[2]);
+		TEST_CHECK("S3-U14", (ok[0] == 26) && (ok[1] == 26) && (ok[2] == 26),
+			   "IR_L on AO: A-Z both ways with smooth edges, any black level");
 	}
 
 	/* S3-U08: DMA ring keeps advancing (hardware sampling alive) */

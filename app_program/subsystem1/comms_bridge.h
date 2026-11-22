@@ -32,6 +32,8 @@ int  comms_bridge_ir_text(unsigned char *buf, int max);
 /* Ultrasonic live text / last sweep (0 = nothing new) */
 int  comms_bridge_us_text(unsigned char *buf, int max);
 int  comms_bridge_sweep_text(unsigned char *buf, int max);
+/* 13 Nov: live lift / tilt (is11/car/imu) */
+int  comms_bridge_imu_text(unsigned char *buf, int max);
 /* Last barcode read widths (0 = nothing new), topic is11/car/bc */
 int  comms_bridge_bc_text(unsigned char *buf, int max);
 

@@ -65,6 +65,46 @@ typedef struct {
 	UH	depth_mm;	/* forward leg past the obstacle    */
 } SCAN_RESULT;
 
+/* ---------------------------------------------------------------------
+ *  13 Nov: glance watch covers the WHOLE car width (task_scan.c).
+ *  While driving the sensor looks 90, 80, 70, 80, 90, 100, 110, 100 deg
+ *  (straight, right, right, ..., left).  With the ~15 deg beam that is
+ *  +-27.5 deg: at the 20 cm stop distance about +-10 cm, more than the
+ *  car's +-8 cm, so an object in front of a CORNER is seen too.
+ *  A corner object is only in the side beams while it is still far
+ *  away (it slides out of the beam as the car gets close), so each
+ *  in-path echo is REMEMBERED as a point on the track (odometry path +
+ *  distance ahead).  Two points within GMEM_MATCH_MM of each other =
+ *  a real object (one stray echo is not enough).  The car stops when
+ *  the remembered object is predicted to be SCAN_STOP_DIST_MM ahead,
+ *  even if the beam no longer sees it.
+ * --------------------------------------------------------------------- */
+#define GLANCE_SEQ_N		8
+#define GLANCE_LOOK_MM		350	/* in-path echoes up to this far ahead are remembered */
+#define GMEM_N			12	/* remembered points                   */
+#define GMEM_MATCH_MM		60	/* same object: this close along and across */
+#define GMEM_KEEP_GLANCES	16	/* forget a point after 2 full cycles (~3 s) */
+#define GMEM_NONE		(-1)
+
+typedef struct {
+	W	at[GMEM_N];		/* path mm where the point is          */
+	W	side[GMEM_N];		/* mm, + = right                      */
+	UW	when[GMEM_N];		/* glance counter when it was seen    */
+	UB	used[GMEM_N];
+	UINT	next;
+	W	obj_at;			/* confirmed object (path mm), or GMEM_NONE */
+} GLANCE_MEM;
+
+IMPORT const INT glance_seq[GLANCE_SEQ_N];	/* servo index offsets from centre */
+IMPORT void gmem_clear(GLANCE_MEM *g);
+/* One in-path echo: ahead/side from the car now, at odometry path_mm. */
+IMPORT void gmem_add(GLANCE_MEM *g, W path_mm, W ahead_mm, W side_mm, UW glance_no);
+/* Forget old / passed points.  Returns the predicted distance ahead of
+   the confirmed object, or GMEM_NONE. */
+IMPORT W    gmem_ahead(GLANCE_MEM *g, W path_mm, UW glance_no);
+/* Edge-only obstacle: the stop sweep sees it at the end angle only */
+IMPORT BOOL scan_confirm_run(INT best_run, BOOL touches_end);
+
 IMPORT W   scan_cos1000(UINT idx);	/* cos of the servo angle x1000 */
 IMPORT W   scan_sin1000(UINT idx);
 IMPORT ER  scan_profile(const SCAN_SWEEP *s, SCAN_RESULT *r);

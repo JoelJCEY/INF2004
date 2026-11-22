@@ -3,6 +3,7 @@
 #include <setjmp.h>
 #include <stdlib.h>
 #include <math.h>
+#include <assert.h>
 #include "subsystem2/subsystem2.h"
 #include "subsystem2/motion_ctrl.h"
 #include "subsystem3/subsystem3.h"
@@ -19,6 +20,9 @@ static MOTION_CMD q[8]; static int qn, qr;
 static MOTION_STATUS last; static int got_status; static UINT flags;
 static UW now_ms; static double gain[2] = {0.8, 0.8}; static int mark_at = -1; static double mark_pos[2];
 static int step_at = -1, step_err = 0, step_show = 0, spin_at = -1;
+static int pulse_at = -1, pulse_peak, pulse_reversed;
+static int arc_start=-1, arc_sign, arc_bad;
+static double arc_min_inner;
 
 void drv_motor_set(UINT m, INT d){ duty[m] = d; }
 void drv_motor_brake_all(void){ duty[0] = duty[1] = 0; }
@@ -32,6 +36,25 @@ ER tk_slp_tsk(TMO t){ (void)t; int i;
     line_latest = line_pack(e, LINE_F_VALID | (e == 1000 ? LINE_F_SATURATED : LINE_F_ON_LINE), now_ms + 20);
     if (step_show > 0 && ((ticks - step_at) < step_show || (spin_at >= 0 && ticks >= spin_at && ticks - spin_at < step_show)))
       printf("      t+%3d ms  err %4d  duty L %4d R %4d\n", (ticks - step_at) * 20, e, duty[0], duty[1]);
+  }
+  if (pulse_at >= 0) {
+    int e = ticks == pulse_at ? 600 : 0;
+    line_latest = line_pack(e, LINE_F_VALID | LINE_F_ON_LINE, now_ms + 20);
+    if (ticks >= pulse_at && ticks < pulse_at + 15) {
+      int steer = abs(duty[1] - duty[0]) / 2;
+      if (steer > pulse_peak) pulse_peak = steer;
+      if (duty[0] < 0 || duty[1] < 0) pulse_reversed = 1;
+    }
+  }
+  if (arc_start>=0) {
+    int age=ticks-arc_start;
+    int e=(age>=0 && age<100) ? arc_sign*600 : 0;
+    line_latest=line_pack(e,LINE_F_VALID|LINE_F_ON_LINE,now_ms+20);
+    if (age>=30 && age<100) {
+      int inner=arc_sign>0 ? 0 : 1;
+      if(v[inner]<arc_min_inner) arc_min_inner=v[inner];
+      if(duty[0]<0 || duty[1]<0) arc_bad=1;
+    }
   }
   for (i = 0; i < 2; i++) {
     double d = duty[i], eff = (fabs(d) > 120) ? (d > 0 ? d - 120 : d + 120) : 0;
@@ -77,6 +100,7 @@ int main(void){
   printf("   FLT_STALL %s, mode %u (5 = LOCKED)\n",
          (flags & FLT_STALL) ? "set" : "NOT set", motion_mode_word);
   printf("   (stall reported %s)\n", got_status && last.event == MS_STALL ? "as MS_STALL" : "NOT");
+  assert((flags & FLT_STALL) && motion_mode_word == MM_LOCKED);
   printf("5) follow a straight line (error 0), LEFT motor 15%% weaker\n");
   block_at = -1; block_left = 0; qn = qr = 0; flags = 0; reset_plant();
   gain[0] = 0.68; gain[1] = 0.8;
@@ -89,11 +113,35 @@ int main(void){
     (pos_um[0]-mark_pos[0]-(pos_um[1]-mark_pos[1]))/1000,
     100.0*(pos_um[0]-mark_pos[0]-(pos_um[1]-mark_pos[1]))/(pos_um[1]-mark_pos[1]));
   printf("   speed now L %.0f R %.0f mm/s\n", v[0], v[1]);
+  assert(fabs((pos_um[0]-mark_pos[0]-(pos_um[1]-mark_pos[1]))/1000) < 3.0);
   printf("6) gradual steering: error 0 -> +400 (line to the left), then line lost (spin)\n");
   qn = qr = 0; reset_plant(); gain[0] = gain[1] = 0.8;
   line_latest = line_pack(0, LINE_F_VALID|LINE_F_ON_LINE, 0);
   motion_reset(); motion_follow_line(300);
   step_at = ticks + 100; step_err = 400; step_show = 8; spin_at = step_at + 40;
   run(160);
+  assert(duty[0] < 0 && duty[1] > 0); /* search must retain its direction */
   step_at = -1;
+  printf("7) one 20 ms steering glitch on a straight\n");
+  qn = qr = 0; reset_plant(); motion_reset(); motion_follow_line(300);
+  pulse_at = ticks + 100;
+  run(200);
+  printf("   peak differential duty %d, reversed %d, final speeds %.0f / %.0f\n",
+         pulse_peak, pulse_reversed, v[0], v[1]);
+  assert(pulse_peak < 140 && !pulse_reversed);
+  assert(fabs(v[0] - v[1]) < 5.0);
+  pulse_at=-1;
+  for (int side=-1;side<=1;side+=2) {
+    printf("8) sustained %s arc at cruise 60 mm/s, then straight\n",side>0?"left":"right");
+    qn=qr=0; reset_plant(); gain[0]=0.68; gain[1]=0.8;
+    motion_reset(); motion_follow_line(60);
+    arc_start=ticks+100; arc_sign=side; arc_bad=0; arc_min_inner=1e9;
+    run(300);
+    printf("   minimum inner speed %.1f mm/s, reverse %d, final speed %.1f/%.1f\n",
+           arc_min_inner,arc_bad,v[0],v[1]);
+    assert(arc_min_inner>8 && !arc_bad);
+    assert(fabs(v[0]-v[1])<3);
+    arc_start=-1;
+  }
+  printf("motion regression assertions: PASS\n");
   return 0; }

@@ -74,6 +74,15 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1
 .usbar div{position:absolute;left:0;top:0;bottom:0;background:var(--ok);width:0}
 .usbar span{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--bad)}
 #radar{width:100%;height:auto;display:block}
+#radarBeam{fill:var(--acc);opacity:.13}
+.zoom{display:flex;gap:6px;align-items:center;margin:2px 0 6px} .zoom button{padding:3px 10px;font-size:12px} .zoom button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+#usSees{font-weight:600;margin:4px 0 2px}
+.lvl{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:10px;align-items:center}
+#lvlDial{width:100%;max-width:210px;height:auto;display:block;margin:0 auto}
+#lvlDial .ring{fill:none;stroke:var(--line)} #lvlDial .ax{stroke:var(--line)} #lvlDial text{fill:var(--mute);font-size:11px}
+#lvlBubble{transition:transform .12s linear}
+.minicar{display:flex;flex-direction:column;gap:8px}
+.minicar figure{margin:0;text-align:center;font-size:11px;color:var(--mute)} .minicar svg{width:84px;height:60px;display:block}
 #radarGrid circle{fill:none;stroke:var(--line)} #radarGrid line{stroke:var(--line)}
 #radarGrid text,.radarTxt{fill:var(--mute);font-size:16px}
 #radarRay{stroke:var(--acc);stroke-width:3;stroke-linecap:round}
@@ -106,6 +115,16 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1
 #bvHist{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 #bvHist button{padding:3px 8px;font-size:12px}
 #bvHist button.sel{border-color:var(--acc);color:var(--acc);font-weight:600}
+.lfbig{display:flex;gap:12px;align-items:center;padding:10px 12px;border-radius:8px;margin:4px 0 10px;background:var(--okbg)}
+.lfbig.bad{background:var(--badbg)} .lfbig.warn{background:var(--warnbg)}
+.lfbig .ic{font-size:22px;font-weight:700;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;background:var(--ok);flex:none}
+.lfbig.bad .ic{background:var(--bad)} .lfbig.warn .ic{background:var(--warn)}
+.lfbig b{display:block;font-size:16px}
+.lfmeter{position:relative;height:14px;background:var(--bg);border:1px solid var(--line);border-radius:7px;margin:4px 0 2px;overflow:hidden}
+.lfmeter div{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--ok)}
+.lfmeter span{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--bad)}
+.lfscale{display:flex;justify-content:space-between;font-size:11px;color:var(--mute)}
+#lfCar{width:84px;height:84px;flex:none}
 .pill.ok{background:var(--okbg);border-color:var(--ok)} .pill.warn{background:var(--warnbg);border-color:var(--warn)} .pill.bad{background:var(--badbg);border-color:var(--bad)}
 .ll em{font-style:normal;color:var(--info)}
 @media (max-width:600px){input{min-width:0;flex:1} #issues{grid-template-columns:1fr}}
@@ -282,10 +301,65 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1
     <h2>Terrain and obstacle</h2>
     <div class="row"><span>Hump active</span><span id="hump">-</span></div>
     <div class="row"><span>Highest hump peak</span><span class="num" id="peak">-</span></div>
-    <div class="row"><span>Bumps ignored (single spikes)</span><span class="num" id="spikes">0</span></div>
+    <div class="row"><span>Lift / overturn stops</span><span class="num" id="spikes">0</span></div>
     <div class="row"><span>Servo</span><span class="num" id="servo">-</span></div>
     <div class="row"><span>Obstacle width / closest</span><span class="num" id="obs">-</span></div>
     <div class="row"><span>Bypass side / fails</span><span id="bypass">-</span></div>
+  </section>
+
+  <section class="card">
+    <h2>Lifted / overturned (stops the motors)</h2>
+    <div class="lfbig" id="lfBox"><div class="ic" id="lfIc">✓</div><div><b id="lfTitle">Waiting for the car</b><span class="small muted" id="lfText"></span></div></div>
+    <div style="display:flex;gap:12px;align-items:center">
+      <svg id="lfCar" viewBox="-50 -50 100 100" role="img" aria-label="Car tilt seen from the side">
+        <line x1="-46" y1="30" x2="46" y2="30" stroke="var(--line)" stroke-width="2"></line>
+        <g id="lfBody"><rect x="-30" y="-6" width="60" height="22" rx="4" fill="var(--acc)" opacity=".8"></rect>
+          <circle cx="-18" cy="20" r="7" fill="var(--ink)"></circle><circle cx="20" cy="20" r="7" fill="var(--ink)"></circle>
+          <line x1="0" y1="-6" x2="0" y2="-26" stroke="var(--ink)" stroke-width="2"></line></g>
+      </svg>
+      <div style="flex:1;min-width:0">
+        <div class="row"><span>Tilt from level</span><span class="num" id="lfTilt">-</span></div>
+        <div class="lfmeter"><div id="lfTiltBar"></div><span style="left:33.3%" title="stop at 60°"></span></div>
+        <div class="lfscale"><span>0°</span><span>stop 60°</span><span>180° upside down</span></div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px"><span>Upward push (lift)</span><span class="num" id="lfUp">-</span></div>
+    <div class="lfmeter"><div id="lfUpBar"></div><span id="lfUpMark" style="left:40%" title="stop at 200 mg"></span></div>
+    <div class="lfscale"><span>0</span><span id="lfUpLbl">stop 0.2 g</span><span>0.5 g</span></div>
+    <div class="row" style="margin-top:8px"><span>Motors</span><span id="lfMotors">-</span></div>
+    <div class="row"><span>Stops since boot</span><span class="num" id="lfCount">-</span></div>
+    <div class="row"><span>Last stop</span><span class="small" id="lfLast">-</span></div>
+    <div class="small muted" style="margin-top:6px">Picking the car up (the end-of-run signal), tipping it past 60° or dropping it stops every motor straight away. Put it back on the line and press START to carry on.</div>
+  </section>
+
+  <section class="card">
+    <h2>Tilt sensor (IMU spirit level)</h2>
+    <div class="lvl">
+      <svg id="lvlDial" viewBox="-100 -100 200 200" role="img" aria-label="Spirit level: car seen from above, front at the top">
+        <circle class="ring" r="90"></circle><circle class="ring" r="60"></circle><circle class="ring" r="30"></circle>
+        <line class="ax" x1="-90" y1="0" x2="90" y2="0"></line><line class="ax" x1="0" y1="-90" x2="0" y2="90"></line>
+        <text x="0" y="-80" text-anchor="middle">FRONT</text><text x="0" y="88" text-anchor="middle">back</text>
+        <text x="-86" y="-4">L</text><text x="80" y="-4">R</text>
+        <text x="32" y="-3">10°</text><text x="62" y="-3">20°</text>
+        <circle id="lvlStart" r="13" fill="none" stroke="var(--mute)" stroke-width="2" stroke-dasharray="3 3"></circle>
+        <g id="lvlBubble"><circle r="11" fill="var(--ok)" opacity=".85"></circle><circle r="4" cx="-3" cy="-3" fill="#fff" opacity=".6"></circle></g>
+      </svg>
+      <div class="minicar">
+      <figure><svg viewBox="-42 -30 84 60"><line x1="-40" y1="20" x2="40" y2="20" stroke="var(--line)" stroke-width="2"></line>
+        <g id="lvlSide"><rect x="-28" y="-4" width="56" height="16" rx="3" fill="var(--acc)" opacity=".8"></rect><circle cx="-17" cy="13" r="6" fill="var(--ink)"></circle><circle cx="17" cy="13" r="6" fill="var(--ink)"></circle><path d="M28 -4 l8 8 l-8 8z" fill="var(--ink)"></path></g></svg>side (front →)</figure>
+      <figure><svg viewBox="-42 -30 84 60"><line x1="-40" y1="20" x2="40" y2="20" stroke="var(--line)" stroke-width="2"></line>
+        <g id="lvlBack"><rect x="-22" y="-6" width="44" height="18" rx="3" fill="var(--acc)" opacity=".8"></rect><rect x="-30" y="2" width="8" height="16" rx="2" fill="var(--ink)"></rect><rect x="22" y="2" width="8" height="16" rx="2" fill="var(--ink)"></rect><text x="-19" y="7" font-size="9" fill="#fff">L</text><text x="13" y="7" font-size="9" fill="#fff">R</text></g></svg>from behind</figure>
+    </div>
+    </div>
+    <div style="margin-top:6px">
+        <div class="big" id="lvlTitle" style="font-size:18px;margin-bottom:4px">Waiting for the car</div>
+        <div class="row"><span>Nose (front)</span><span class="num" id="lvlPitch">-</span></div>
+        <div class="row"><span>Side</span><span class="num" id="lvlRoll">-</span></div>
+        <div class="row"><span>Total pull</span><span class="num" id="lvlG">-</span></div>
+        <div class="row"><span>At start-up ("flat")</span><span class="num" id="lvlStartTxt">-</span></div>
+        <div class="row"><span>Raw x / y / z</span><span class="num small" id="lvlRaw">-</span></div>
+    </div>
+    <div class="small muted" style="margin-top:6px">Like a spirit level: the bubble moves to the <b>higher</b> side. Dashed circle = how the sensor sat when the car learned "flat" at power-on. The lift stop compares with that, so a sensor that is mounted a little crooked is fine. Rings: 10°, 20°, 30° (edge).</div>
   </section>
 
   <section class="card wide">
@@ -295,7 +369,7 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1
         <div class="muted small">Distance where the sensor points</div>
         <div class="big num" id="usDist">-</div>
         <div class="usbar"><div id="usFill"></div><span id="usStop" title="stop distance"></span></div>
-        <div style="display:flex;justify-content:space-between" class="small muted"><span>0</span><span id="usStopLbl">stop 15 cm</span><span>60 cm+</span></div>
+        <div style="display:flex;justify-content:space-between" class="small muted"><span>0</span><span id="usStopLbl">stop 20 cm</span><span>60 cm+</span></div>
         <div class="row"><span>What it is doing</span><span id="usState">-</span></div>
         <div class="row"><span>Servo angle</span><span class="num" id="usServo">-</span></div>
         <div class="row"><span>Echoes (last 20)</span><span class="num" id="usEcho">-</span></div>
@@ -308,13 +382,15 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1
         <div class="row"><span>Bypass result</span><span id="usResult">-</span></div>
       </div>
       <div>
-        <svg id="radar" viewBox="-320 -330 640 350" role="img" aria-label="Top view of the last scan">
-          <g id="radarGrid"></g><g id="radarPts"></g>
+        <div class="zoom"><span class="small muted">Range</span><button data-r="500" class="on">50 cm</button><button data-r="1000">1 m</button></div>
+        <div id="usSees">Waiting for the sensor</div>
+        <svg id="radar" viewBox="-320 -330 640 350" role="img" aria-label="Top view of what the ultrasonic sensor sees">
+          <g id="radarGrid"></g><path id="radarBeam" d=""></path><g id="radarPts"></g><g id="radarLive"></g>
           <line id="radarRay" x1="0" y1="0" x2="0" y2="-300"></line>
           <rect x="-40" y="-6" width="80" height="22" rx="5" class="radarCar"></rect>
           <text x="0" y="10" text-anchor="middle" class="radarTxt">car</text>
         </svg>
-        <div class="small muted">Top view, car facing up. Dots = last scan (red = the obstacle, within its closest + 15 cm), line = where the sensor points now. Rings every 20 cm.</div>
+        <div class="small muted">Top view, car facing up. <b>Live:</b> the shaded cone is where the sensor points now (about 15° wide) and the filled dots are its echoes from the last 4 s, fading out (red = closer than the 20 cm stop, amber = within 30 cm, green = farther). <b>Last full scan</b> (only after a stop for an obstacle): hollow circles, red = the obstacle. The dashed red arc is the 20 cm stop distance.</div>
       </div>
     </div>
   </section>
@@ -351,9 +427,9 @@ const STATE_HELP=[
  "Motors are locked because of a fault. Fix the cause, then press RESET: the car reruns its start-up checks.",
  "Searching for the line."];
 const BARCODES=["none","TURN LEFT","TURN RIGHT","GO STRAIGHT","U-TURN","unrecognised","END","?"];
-const EVENTS=["stationary","cruising","accelerating / braking","turning","climbing","descending","impact","?"];
-const T_TLM="is11/car/tlm",T_CMD="is11/car/cmd",T_STATUS="is11/car/status",T_LOG="is11/car/log",T_IR="is11/car/ir",T_US="is11/car/us",T_SWEEP="is11/car/sweep",T_BC="is11/car/bc";
-const US_STOP_CM=15,US_STATES=["parked (slow ping)","watching ahead","paused on a hump","scanning (coarse)","scanning (fine)","guarding the bypass"];
+const EVENTS=["stationary","cruising","accelerating / braking","turning","climbing","descending","lifted / overturned","?"];
+const T_TLM="is11/car/tlm",T_CMD="is11/car/cmd",T_STATUS="is11/car/status",T_LOG="is11/car/log",T_IR="is11/car/ir",T_US="is11/car/us",T_SWEEP="is11/car/sweep",T_BC="is11/car/bc",T_IMU="is11/car/imu";
+const US_STOP_CM=20,US_STATES=["parked (slow ping)","watching ahead","paused on a hump","scanning (coarse)","scanning (fine)","guarding the bypass"];
 let usHist=[],usLastAlert=null;
 let irLive=0;
 const NOISE=/^(ir|enc):/;
@@ -376,10 +452,10 @@ const FAULTS=[
   what:"The car tried to drive around an obstacle twice and couldn't find the line again.",
   why:["Obstacle wider than expected","Line not found after the bypass (sensor calibration)"],
   fix:["Move the car back onto the line","Press RESET"]},
- {bit:0x10,sev:"warn",title:"Bump / impact detected",
-  what:"The accelerometer saw a jolt of more than 2.5 g on 2 of 3 readings, so the car stopped.",
-  why:["The car hit something","The car was picked up, dropped or knocked","Very strong vibration from a loose part"],
-  fix:["If you picked it up, this is expected","Put it back on the line and press START (or RESET to clear the bit)"]},
+ {bit:0x10,sev:"warn",title:"Car lifted or overturned",
+  what:"The tilt sensor saw the car being picked up, tipped over or dropped, so all motors stopped. Lifting the car is the end-of-run signal in the demo.",
+  why:["You picked the car up (end of run)","The car tipped onto its side or upside down","The car fell off the table or mat"],
+  fix:["Put it back on the line, level","Press START to carry on, or RESET to clear the bit and rerun the start-up checks"]},
  {bit:0x20,sev:"warn",title:"Line lost",
   what:"All three line sensors read white for 10 s of driving, so the car stopped.",
   why:["The car drove off the line (curve too sharp, or steering too weak or too strong)","Sensor calibration wrong, so the line looks too faint (check Start-up checks)","Sensors too high above the floor, or the line is grey/shiny"],
@@ -472,6 +548,7 @@ function show(d){
   $("lflags").textContent=lf.join(", ")||"no reading";
   $("barcode").textContent=BARCODES[d.bc]+(d.letter>32?" ('"+String.fromCharCode(d.letter)+"')":"");
   $("hump").textContent=d.hump?"YES":"no";
+  lf.onHump=!!d.hump;
   $("peak").textContent=(d.peak/10).toFixed(1)+" mm";
   $("servo").textContent=d.servo+"°";
   $("obs").textContent=d.obst?(d.width+" / "+d.closest+" mm"):"-";
@@ -490,6 +567,7 @@ function show(d){
     why:["The car is in a tight correction (normal for a moment)","The stopped wheel is blocked, or its encoder isn't counting"],
     fix:["If it lasts, lift the car and check both wheels spin","Check the encoder cable of the wheel showing 0"],time:now()});
   else if(oneSided===0) clearIssue("onewheel");
+  lfRender();
   render();
 }
 
@@ -502,7 +580,7 @@ function sevOf(t){
   if(/^\[TEST\] \S+ FAIL\b/.test(t)) return "bad";
   if(/^\[TEST\] \S+ PASS\b/.test(t)) return "ok";
   if(/^\[BENCH\]/.test(t)) return "bench";
-  if(/FAULT|STALL|ENCODER \w+ silent|FAILED|NOT READY|not answering|failing|IMPACT|LINE LOST|LOCKED|selftest (LEFT|RIGHT)|NO FREE|WATCHDOG/.test(t)) return "bad";
+  if(/FAULT|STALL|ENCODER \w+ silent|FAILED|NOT READY|not answering|failing|LIFTED|OVERTURNED|LINE LOST|LOCKED|selftest (LEFT|RIGHT)|NO FREE|WATCHDOG/.test(t)) return "bad";
   if(/NO BARCODE MAP|barcode map REJECTED/.test(t)) return "bad";
   if(/^line: read .* rejected/.test(t)) return "warn";
   if(/^line: read .* -> '/.test(t)) return "ok";
@@ -557,10 +635,11 @@ function parse(t,up){
       setCheck("2calib","warn","Line calibration: LOW CONTRAST, defaults used (centre "+rng("C")+")");}}
   if((m=/^imu: baseline x (-?\d+) mg, y (-?\d+) mg/.exec(t))){
     baseline={x:+m[1],y:+m[2]};
-    if(Math.abs(baseline.x)>150||Math.abs(baseline.y)>150){
-      setCheck("3imu","warn","Tilt sensor: car was tilted at start (x "+baseline.x+", y "+baseline.y+" mg)");
-      setIssue("tilt",{sev:"warn",title:"Car was not level at start-up",what:"The tilt sensor learns 'flat' at power-on. The car was tilted, so hump detection may be wrong.",detail:t,why:["Car on a slope or held in the hand at power-on"],fix:["Power on with the car flat on the floor"],time:when});}
-    else{clearIssue("tilt");setCheck("3imu","ok","Tilt sensor: level (x "+baseline.x+", y "+baseline.y+" mg)");}}
+    /* Raw X/Y include the board's mounting angle. Firmware learns this
+       gravity reference for lift/tilt and subtracts x0 for hump detection.
+       These values cannot establish whether the chassis was level. Keep
+       any separate movement-during-calibration warning intact. */
+    setCheck("3imu","ok","Tilt sensor: startup reference learned (x "+baseline.x+", y "+baseline.y+" mg)");}
   if(/LSM303DLHC not answering|imu: I2C read failing/.test(t)){setCheck("3imu","bad","Tilt sensor: not answering on I2C");
     setIssue("imu",{sev:"bad",title:"Tilt sensor (IMU) not answering",what:"I2C reads to the LSM303 failed.",detail:t,why:["Cable loose (SDA GP16, SCL GP17)"],fix:["Reseat the IMU cable","Power-cycle"],time:when});}
   if((m=/^ctrl: sensors not ready at start: IMU (\S+), IR (\S+)/.exec(t))) setIssue("sensors",{sev:"bad",title:"A sensor wasn't ready at start-up",
@@ -572,11 +651,12 @@ function parse(t,up){
     setIssue("enc",{sev:"bad",title:m[1]+" encoder stopped counting",what:"The motors ran for 1 s but the "+m[1].toLowerCase()+" encoder counted nothing while the other counted "+(m[1]==="LEFT"?m[3]:m[2])+".",
       detail:t,why:["Encoder cable loose on that wheel","Encoder disc/magnet slipped"],fix:["Check the encoder cable","Turn the wheel by hand with the car stopped and watch the Encoder L / R numbers change"],time:when});
     $("lastMotion").textContent="encoder "+m[1]+" at "+now();}
-  if((m=/^imu: IMPACT (\d+) mg/.exec(t))) setIssue("impact",{sev:"warn",title:"Bump of "+(m[1]/1000).toFixed(1)+" g",what:"Strong jolt detected; the car stopped.",detail:t,why:["Hit something, picked up, or dropped"],fix:["Put it back on the line and press START"],time:when});
-  if(/^imu: spike/.test(t)){spikes++;$("spikes").textContent=spikes;}
+  if(/^imu: car kept moving while learning flat/.test(t)) setIssue("tilt",{sev:"warn",title:"Car moved while it learned 'flat'",what:"At power-on the tilt sensor learns what flat is. The car kept moving for 3 tries, so the lift / tilt stop and the hump height may be off.",detail:t,why:["Car held in the hand or still being placed at power-on"],fix:["Put the car flat on the floor, then switch on and don't touch it for 3 s"],time:when});
+  if((m=/^imu: (LIFTED|OVERTURNED)/.exec(t))){lf.lastKind=m[1]==="LIFTED"?"a lift":"a tilt / overturn";lf.last=now();$("lfLast").textContent=(m[1]==="LIFTED"?"lifted":"overturned / tilted")+" at "+now()+((/\(([^)]*)\)/.exec(t))?" ("+RegExp.$1+")":"");lfRender();}
+  if(/^imu: (LIFTED|OVERTURNED)/.test(t)) setIssue("impact",{sev:"warn",title:/^imu: LIFTED/.test(t)?"Car lifted: motors stopped":"Car tipped over or dropped: motors stopped",what:"The tilt sensor saw the car leave the floor or tip over, so every motor stopped.",detail:t,why:["Picked up (end of run)","Tipped over or fell"],fix:["Put it back on the line and press START"],time:when});
   if(/^line: LINE LOST/.test(t)) setIssue("lineLost",{sev:"warn",title:"Line lost",what:"All sensors saw white for 10 s of driving.",detail:lastIr?("last sensor reading: "+lastIr.txt):t,
      why:["Drove off the line","Calibration makes the line look faint"],fix:["Check the Line sensors card on the line","Put the car back and press START"],time:when});
-  if((m=/^scan: (?:OBSTACLE|something) at (\d+) mm/.exec(t))){usLastAlert=+m[1];$("usAlert").textContent=(m[1]/10).toFixed(1)+" cm at "+now();$("usResult").textContent="scanning ...";}
+  if((m=/^scan: (?:OBSTACLE|something) (?:at )?(\d+) mm/.exec(t))){usLastAlert=+m[1];$("usAlert").textContent=(m[1]/10).toFixed(1)+" cm at "+now();$("usResult").textContent="scanning ...";}
   if((m=/^scan: profile kind (\d+) side (\d+) width (\d+) closest (\d+) offset (\d+)(?: depth (\d+))? \((\d+) ms\)/.exec(t))){
     const side=["none (no gap)","LEFT","RIGHT"][+m[2]]||m[2];
     $("usWidth").textContent=(+m[4]===0)?"obstacle gone":(m[3]/10).toFixed(1)+" / "+(m[4]/10).toFixed(1)+" cm";
@@ -589,7 +669,12 @@ function parse(t,up){
   if(/^ctrl: obstacle gone/.test(t)) $("usResult").textContent="obstacle gone, following the line";
   if(/^scan: no echo x3/.test(t)) $("usResult").textContent="no echo x3";
   if(/ENCODER PIO LOAD FAILED/.test(t)) setIssue("pio",{sev:"bad",title:"Encoder hardware block failed to load",what:"The PIO program for the encoders couldn't be loaded.",detail:t,why:["Firmware problem"],fix:["Reflash, then send the log"],time:when});
-  if(/DMA ring overrun/.test(t)) setIssue("dma",{sev:"info",title:"Line sensor readings were skipped",what:"The line task fell behind and skipped some samples. Occasional is OK.",detail:t,why:["CPU busy (lots of logging)"],fix:["Ignore unless it repeats a lot"],time:when});
+  if((m=/DMA ring overrun, (\d+) samples skipped/.exec(t))){
+    const skipped=+m[1], gap=skipped/3000;
+    setIssue("dma",{sev:gap>=1?"warn":"info",title:"Line sensor readings were skipped",
+      what:"The line task skipped about "+gap.toFixed(2)+" s of ADC samples. This can interrupt line following and barcode reading if the car is moving.",detail:t,
+      why:["The line task was delayed while other work ran; the log alone does not identify the cause"],
+      fix:["Check whether this happens only at power-on or repeatedly while driving","If it repeats while driving, stop the run and save the surrounding log lines for diagnosis"],time:when});}
   if(/^ustest/.test(t)&&!liveIssues.ustest) setIssue("ustest",{sev:"warn",title:"The ultrasonic TEST file is on the car",
      what:"This file never drives: START is refused on purpose, so STOP has nothing to stop. It only tests the ultrasonic sensor and servo.",
      why:["The USTEST .uf2 was the last file flashed"],fix:["To drive, flash the FIELD file (mtk3pico_..._FIELD_31OCT.uf2)","Keep the USTEST file for sensor tests with us_check.html"],time:when});
@@ -633,11 +718,31 @@ function showIr(){
 
 
 /* ---------- ultrasonic ---------- */
-function radarXY(deg,mm){const a=deg*Math.PI/180,r=Math.min(mm,1000)*0.3;return [r*Math.cos(a),-r*Math.sin(a)];}
-(function grid(){let g="";for(let cm=20;cm<=100;cm+=20){const r=cm*3;g+='<circle cx="0" cy="0" r="'+r+'"></circle><text x="'+(r-4)+'" y="14" text-anchor="end">'+cm+'</text>';}
-  [30,60,90,120,150].forEach(d=>{const p=radarXY(d,1000);g+='<line x1="0" y1="0" x2="'+p[0].toFixed(0)+'" y2="'+p[1].toFixed(0)+'"></line>';});
-  const sr=US_STOP_CM*3;g+='<path d="M '+(-sr)+' 0 A '+sr+' '+sr+' 0 0 1 '+sr+' 0" fill="none" stroke="var(--bad)" stroke-dasharray="4 4"></path>';
-  $("radarGrid").innerHTML=g;$("usStop").style.left=(US_STOP_CM/60*100)+"%";})();
+let radarR=500,lastSweep=null,usLivePts=[],usCur={deg:90,mm:0};
+try{const z=+localStorage.getItem("is11radarR");if(z===500||z===1000)radarR=z;}catch(e){}
+function radarXY(deg,mm){const a=deg*Math.PI/180,r=Math.min(mm,radarR)*300/radarR;return [r*Math.cos(a),-r*Math.sin(a)];}
+function drawGrid(){let g="";const step=radarR<=500?100:200;
+  for(let mm=step;mm<=radarR;mm+=step){const r=mm*300/radarR;g+='<circle cx="0" cy="0" r="'+r+'"></circle><text x="'+(r-4)+'" y="14" text-anchor="end">'+(mm/10)+'</text>';}
+  [30,60,90,120,150].forEach(d=>{const p=radarXY(d,radarR);g+='<line x1="0" y1="0" x2="'+p[0].toFixed(0)+'" y2="'+p[1].toFixed(0)+'"></line>';});
+  const sr=US_STOP_CM*10*300/radarR;g+='<path d="M '+(-sr)+' 0 A '+sr+' '+sr+' 0 0 1 '+sr+' 0" fill="none" stroke="var(--bad)" stroke-dasharray="4 4"></path>';
+  $("radarGrid").innerHTML=g;$("usStop").style.left=(US_STOP_CM/60*100)+"%";
+  document.querySelectorAll(".zoom button").forEach(b=>b.classList.toggle("on",+b.dataset.r===radarR));}
+document.querySelectorAll(".zoom button").forEach(b=>b.addEventListener("click",()=>{radarR=+b.dataset.r;try{localStorage.setItem("is11radarR",radarR)}catch(e){}
+  drawGrid();if(lastSweep)drawSweep(lastSweep);drawBeam();drawLive();}));
+function usColor(mm){return mm<=US_STOP_CM*10?"var(--bad)":mm<=300?"var(--warn)":"var(--ok)";}
+function drawBeam(){const d=usCur.deg,mm=(usCur.mm>0&&usCur.mm<1000)?usCur.mm:radarR,a=radarXY(d-7.5,mm),b=radarXY(d+7.5,mm),r=Math.min(mm,radarR)*300/radarR;
+  $("radarBeam").setAttribute("d","M0 0 L"+a[0].toFixed(1)+" "+a[1].toFixed(1)+" A"+r.toFixed(1)+" "+r.toFixed(1)+" 0 0 0 "+b[0].toFixed(1)+" "+b[1].toFixed(1)+" Z");
+  const p=radarXY(d,mm);$("radarRay").setAttribute("x2",p[0].toFixed(1));$("radarRay").setAttribute("y2",p[1].toFixed(1));}
+function drawLive(){const t=performance.now();usLivePts=usLivePts.filter(p=>t-p.t<4000);
+  $("radarLive").innerHTML=usLivePts.map(p=>{const xy=radarXY(p.deg,p.mm),off=p.mm>radarR;
+    return '<circle cx="'+xy[0].toFixed(1)+'" cy="'+xy[1].toFixed(1)+'" r="'+(off?4:7)+'" fill="'+usColor(p.mm)+'" opacity="'+(Math.max(0.12,1-(t-p.t)/4000)*(off?0.5:1)).toFixed(2)+'"></circle>';}).join("");
+  const rec=usLivePts.filter(p=>t-p.t<1200);
+  if(!rec.length&&!usCur.seen){$("usSees").textContent="Waiting for the sensor";return;}
+  if(!rec.length){$("usSees").textContent="Clear: nothing within 1 m where it is looking";$("usSees").style.color="var(--ok)";return;}
+  const n=rec.reduce((a,b)=>b.mm<a.mm?b:a);const side=Math.abs(n.deg-90)<=2?"straight ahead":(Math.abs(n.deg-90)+"° to the "+(n.deg<90?"right":"left"));
+  $("usSees").textContent=(n.mm<=US_STOP_CM*10?"STOP: ":"")+"Something "+(n.mm/10).toFixed(0)+" cm away, "+side;$("usSees").style.color=usColor(n.mm);}
+setInterval(drawLive,250);
+drawGrid();
 function showUs(state,deg,mm){
   const cm=mm/10,far=mm>=1000,none=mm===0;
   usHist.push(none?0:1);if(usHist.length>20)usHist.shift();
@@ -648,17 +753,17 @@ function showUs(state,deg,mm){
   $("usState").textContent=US_STATES[state]||("state "+state);
   $("usServo").textContent=deg+"° ("+(deg===90?"straight ahead":deg<90?"looking right":"looking left")+")";
   const ok=usHist.reduce((a,b)=>a+b,0);$("usEcho").textContent=ok+" / "+usHist.length;
-  const p=radarXY(deg,none?1000:mm);$("radarRay").setAttribute("x2",p[0].toFixed(1));$("radarRay").setAttribute("y2",p[1].toFixed(1));
+  usCur={deg,mm,seen:true};if(!none&&!far)usLivePts.push({deg,mm,t:performance.now()});drawBeam();
   if(usHist.length>=20&&ok<5) setIssue("usNoEcho",{sev:"warn",title:"Ultrasonic sensor gives no echo",what:"Almost no ping in the last 20 came back.",
     why:["TRIG and ECHO swapped (TRIG = yellow = GP0, ECHO = white = GP1 on Grove port 1)","Sensor not powered, or a 5 V-only HC-SR04 on 3.3 V","Pointing at something soft or at a steep angle"],
     fix:["Check the Grove cable on port 1","Use the 3.3 V version (HC-SR04P)","Hold a book 20 cm in front and watch the distance"],time:now()});
   else if(ok>=10) clearIssue("usNoEcho");
 }
 function drawSweep(d){
-  const pts=d.map((mm,i)=>({deg:30+5*i,mm})).filter(p=>p.mm>0);
+  lastSweep=d;const pts=d.map((mm,i)=>({deg:30+5*i,mm})).filter(p=>p.mm>0);
   const near=pts.filter(p=>p.mm<1000).map(p=>p.mm);const closest=near.length?Math.min(...near):null;
   $("radarPts").innerHTML=pts.map(p=>{const xy=radarXY(p.deg,p.mm);const obst=closest!==null&&p.mm<1000&&p.mm<=closest+150;
-    return '<circle cx="'+xy[0].toFixed(1)+'" cy="'+xy[1].toFixed(1)+'" r="'+(obst?7:5)+'" fill="'+(p.mm>=1000?"var(--mute)":obst?"var(--bad)":"var(--ok)")+'"></circle>';}).join("");
+    if(p.mm>radarR&&p.mm<1000)return "";return '<circle cx="'+xy[0].toFixed(1)+'" cy="'+xy[1].toFixed(1)+'" r="'+(obst?8:6)+'" fill="none" stroke-width="2.5" stroke="'+(p.mm>=1000?"var(--mute)":obst?"var(--bad)":"var(--ok)")+'"></circle>';}).join("");
 }
 
 /* ---------- issues ---------- */
@@ -831,10 +936,11 @@ function connect(){
   try{localStorage.setItem("is11url",url);}catch(e){}
   dlog("connecting to "+url);
   client=mqtt.connect(url,{clientId:"is11-dash-"+Math.random().toString(16).slice(2,8),reconnectPeriod:2000});
-  client.on("connect",()=>{$("brokerDot").classList.add("on");dlog("broker connected");client.subscribe([T_TLM,T_STATUS,T_LOG,T_IR,T_US,T_SWEEP,T_CMD,T_BC]);render();setTimeout(renderMap,1500);});
+  client.on("connect",()=>{$("brokerDot").classList.add("on");dlog("broker connected");client.subscribe([T_TLM,T_STATUS,T_LOG,T_IR,T_US,T_SWEEP,T_CMD,T_BC,T_IMU]);render();setTimeout(renderMap,1500);});
   client.on("close",()=>{$("brokerDot").classList.remove("on");render();});
   client.on("error",e=>dlog("error: "+e.message));
   client.on("message",(t,p)=>{
+    if(t===T_IMU){const v=new TextDecoder().decode(p).trim().split(/\s+/).map(Number);if(v.length>=4)lfLive(v);lvlLive(v);return;}
     if(t===T_BC){const v=new TextDecoder().decode(p).trim().split(/\s+/).map(Number);if(v.length>=4)bvAdd(v);return;}
     if(t===T_CMD){ /* retained barcode map (7 bytes); START/STOP echoes are ignored */
       if(p.length===7&&p[0]===1&&p[1]===0x10){brokerMap=Array.from(p.slice(3)).map(c=>String.fromCharCode(c));renderMap();}
@@ -891,6 +997,72 @@ function sendMap(){
   try{localStorage.setItem("is11map",v.join(""));}catch(e){}
   $("mapMsg").textContent="Sent "+fmtMap(v)+". Waiting for the car to confirm...";$("mapMsg").style.color="";
   dlog("sent barcode map "+v.join(" "));
+}
+
+/* ---------- spirit level (is11/car/imu: cos up now count fx fy fz bx by bz) ---------- */
+/* Axis signs: x = forward (IMU_FWD_SIGN in subsystem4.h), y = left.  If the
+   bubble goes the wrong way on the car, flip these. */
+const LVL_FWD_SIGN=1,LVL_LEFT_SIGN=1,LVL_EDGE_DEG=30;
+function lvlAngles(x,y,z){x*=LVL_FWD_SIGN;y*=LVL_LEFT_SIGN;
+  return {pitch:Math.atan2(x,Math.hypot(y,z))*180/Math.PI,roll:Math.atan2(y,Math.hypot(x,z))*180/Math.PI,g:Math.hypot(x,y,z)};}
+function lvlXY(a){let px=-a.roll/LVL_EDGE_DEG*90,py=-a.pitch/LVL_EDGE_DEG*90;const r=Math.hypot(px,py);if(r>90){px*=90/r;py*=90/r;}return [px,py];}
+function sgnTxt(v,pos,neg){const a=Math.abs(v);return a<0.5?"level":a.toFixed(1)+"° "+(v>0?pos:neg);}
+function lvlLive(v){
+  if(v.length<10){$("lvlTitle").textContent="Needs the new .uf2";$("lvlTitle").style.color="var(--mute)";return;}
+  const a=lvlAngles(v[4],v[5],v[6]),b=lvlAngles(v[7],v[8],v[9]);
+  const p=lvlXY(a),q=lvlXY(b);
+  $("lvlBubble").setAttribute("transform","translate("+p[0].toFixed(1)+" "+p[1].toFixed(1)+")");
+  $("lvlStart").setAttribute("cx",q[0].toFixed(1));$("lvlStart").setAttribute("cy",q[1].toFixed(1));
+  const tilt=Math.hypot(a.pitch,a.roll),rel=Math.acos(Math.max(-1,Math.min(1,v[0]/1000)))*180/Math.PI;
+  const col=rel>=60?"var(--bad)":rel>=20?"var(--warn)":"var(--ok)";
+  $("lvlBubble").firstElementChild.setAttribute("fill",col);
+  $("lvlTitle").textContent=rel>=60?"Tipped over":rel>=20?"Tilted "+rel.toFixed(0)+"° from flat":rel>=5?"Slightly tilted ("+rel.toFixed(0)+"°)":"Flat";
+  $("lvlTitle").style.color=col;
+  $("lvlPitch").textContent=sgnTxt(a.pitch,"up","down");
+  $("lvlRoll").textContent=sgnTxt(a.roll,"left side up","right side up");
+  $("lvlG").textContent=(a.g/1000).toFixed(2)+" g"+(a.g<700?" (falling?)":a.g>1300?" (bump / lift)":"");
+  const bt=Math.hypot(b.pitch,b.roll);
+  $("lvlStartTxt").textContent=(bt<3?"level":"nose "+sgnTxt(b.pitch,"up","down")+", side "+sgnTxt(b.roll,"L up","R up"));
+  $("lvlStartTxt").title=bt>=8?"The sensor sat "+bt.toFixed(0)+"° off level at power-on: board mounted crooked, or the car was not flat":"";
+  $("lvlRaw").textContent=v[4]+" / "+v[5]+" / "+v[6]+" mg";
+  $("lvlSide").setAttribute("transform","rotate("+(-a.pitch).toFixed(1)+" 0 8)");
+  $("lvlBack").setAttribute("transform","rotate("+(a.roll).toFixed(1)+" 0 8)");
+}
+
+/* ---------- lifted / overturned (13 Nov) ---------- */
+let lf={cos:1000,up:0,now:0,count:null,last:null,lastKind:"",onHump:false,liveT:0};
+function lfLive(v){
+  lf.cos=v[0];lf.up=v[1];lf.now=v[2];lf.count=v[3];lf.liveT=performance.now();
+  const deg=Math.acos(Math.max(-1,Math.min(1,lf.cos/1000)))*180/Math.PI;
+  $("lfTilt").textContent=deg.toFixed(0)+"°"+(deg>=60?" (over 60°)":"");
+  $("lfTiltBar").style.width=Math.min(100,deg/180*100)+"%";
+  $("lfTiltBar").style.background=deg>=60?"var(--bad)":deg>=30?"var(--warn)":"var(--ok)";
+  $("lfBody").setAttribute("transform","rotate("+(-deg).toFixed(1)+" 0 5)");
+  const lim=lf.onHump?400:200;
+  $("lfUp").textContent=(lf.up>0?"+":"")+lf.up+" mg"+(lf.up>lim?" (lift)":"");
+  $("lfUpBar").style.width=Math.max(0,Math.min(100,lf.up/500*100))+"%";
+  $("lfUpBar").style.background=lf.up>lim?"var(--bad)":lf.up>lim/2?"var(--warn)":"var(--ok)";
+  $("lfUpMark").style.left=(lim/500*100)+"%";$("lfUpLbl").textContent="stop "+(lim/1000)+" g"+(lf.onHump?" (on a hump)":"");
+  $("lfCount").textContent=lf.count;$("spikes").textContent=lf.count;
+  lfRender();
+}
+function lfRender(){
+  const latched=last&&(last.faults&0x10), stopped=last&&(last.state===7||last.state===8);
+  const deg=Math.acos(Math.max(-1,Math.min(1,lf.cos/1000)))*180/Math.PI;
+  let cls="",ic="✓",title="On the floor, level",text="";
+  const driving=last&&((last.state>=2&&last.state<=5)||last.state===9);
+  if(lf.now!==0&&last&&!driving&&!latched){cls="warn";ic="i";title=lf.now===2?"Tilted / turned over":"Picked up";text=" The car is not driving, so there is nothing to stop.";}
+  else if(lf.now===2||deg>=60){cls="bad";ic="!";title=deg>=150?"UPSIDE DOWN":"OVERTURNED / TILTED "+deg.toFixed(0)+"°";text=" Motors stopped.";}
+  else if(lf.now===1){cls="bad";ic="!";title="LIFTED";text=" Motors stopped.";}
+  else if(latched&&stopped){cls="warn";ic="■";title="Stopped after "+(lf.lastKind||"a lift / tilt");text=" Put it on the line and press START (RESET clears the bit).";}
+  else if(latched){cls="warn";ic="i";title="Was "+(lf.lastKind||"lifted / tilted")+" earlier";text=" RESET clears the bit.";}
+  else if(!last&&!lf.liveT){title="Waiting for the car";}
+  else if(deg>=30){cls="warn";ic="!";title="Tilted "+deg.toFixed(0)+"°";text=" Stops at 60°.";}
+  $("lfBox").className="lfbig "+cls;$("lfIc").textContent=ic;$("lfTitle").textContent=title;$("lfText").textContent=text;
+  if(last){const sp=Math.max(Math.abs(last.vl),Math.abs(last.vr));
+    $("lfMotors").textContent=sp<5?"stopped":"running ("+last.vl+" / "+last.vr+" mm/s)";
+    $("lfMotors").style.color=(sp>=5&&(lf.now!==0||deg>=60))?"var(--bad)":"";}
+  if(!lf.liveT) $("lfTilt").textContent=$("lfTilt").textContent==="-"?"needs the new .uf2":$("lfTilt").textContent;
 }
 
 /* ---------- barcode picture ---------- */

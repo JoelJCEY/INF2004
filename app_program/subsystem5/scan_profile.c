@@ -164,3 +164,67 @@ EXPORT ER scan_profile(const SCAN_SWEEP *s, SCAN_RESULT *r)
 	}
 	return E_OK;
 }
+
+/* ---------------------------------------------------------------------
+ *  Glance memory (13 Nov, see scan_profile.h)
+ * --------------------------------------------------------------------- */
+EXPORT const INT glance_seq[GLANCE_SEQ_N] = { 0, -2, -4, -2, 0, 2, 4, 2 };
+
+EXPORT void gmem_clear(GLANCE_MEM *g)
+{
+	INT	i;
+
+	for (i = 0; i < GMEM_N; i++) {
+		g->used[i] = 0U;
+	}
+	g->next = 0U;
+	g->obj_at = GMEM_NONE;
+}
+
+EXPORT void gmem_add(GLANCE_MEM *g, W path_mm, W ahead_mm, W side_mm, UW glance_no)
+{
+	INT	i;
+	W	at = path_mm + ahead_mm;
+	W	near_at;
+
+	for (i = 0; i < GMEM_N; i++) {
+		if ((g->used[i] != 0U) &&
+		    (APP_ABS(g->at[i] - at) <= GMEM_MATCH_MM) &&
+		    (APP_ABS(g->side[i] - side_mm) <= GMEM_MATCH_MM)) {
+			/* seen twice: a real object; keep its nearest edge */
+			near_at = (g->at[i] < at) ? g->at[i] : at;
+			if ((g->obj_at == GMEM_NONE) || (near_at < g->obj_at)) {
+				g->obj_at = near_at;
+			}
+		}
+	}
+	g->at[g->next] = at;
+	g->side[g->next] = side_mm;
+	g->when[g->next] = glance_no;
+	g->used[g->next] = 1U;
+	g->next = (g->next + 1U) % GMEM_N;
+}
+
+EXPORT W gmem_ahead(GLANCE_MEM *g, W path_mm, UW glance_no)
+{
+	INT	i;
+
+	for (i = 0; i < GMEM_N; i++) {
+		if ((g->used[i] != 0U) &&
+		    (((glance_no - g->when[i]) > GMEM_KEEP_GLANCES) || (g->at[i] < path_mm))) {
+			g->used[i] = 0U;
+		}
+	}
+	if ((g->obj_at != GMEM_NONE) && (g->obj_at < (path_mm - SCAN_CAR_LEN_MM))) {
+		g->obj_at = GMEM_NONE;		/* long behind us */
+	}
+	return (g->obj_at == GMEM_NONE) ? GMEM_NONE : (g->obj_at - path_mm);
+}
+
+/* Stop sweep: 2 neighbouring angles in path, or 1 at the END of the
+   sweep (an object off to the side, mostly outside the sweep, that the
+   glance memory already saw twice) */
+EXPORT BOOL scan_confirm_run(INT best_run, BOOL touches_end)
+{
+	return ((best_run >= SCAN_CONFIRM_HITS) || ((best_run >= 1) && touches_end)) ? TRUE : FALSE;
+}

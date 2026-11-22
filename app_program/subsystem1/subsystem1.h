@@ -125,6 +125,12 @@ IMPORT ER  comms_decode_cmd(const UB *buf, INT len, REMOTE_MSG *out);
      3 0 = off, 1 = on */
 #define WIRE_TEST_LEN		4
 #define WIRE_OP_BC_TEST		0x11U
+/* 16 Nov: song frame, same topic, QoS 1, NOT retained.  4 bytes:
+     0 version (=1)   1 opcode WIRE_OP_SONG (0x12)   2 sender seq
+     3 song: 0 stop, 1 Twinkle Twinkle, 2 Ode to Joy, 3 I Love You, 4 Race Day,
+     5 Mountain King, 6 Drop */
+#define WIRE_SONG_LEN		4
+#define WIRE_OP_SONG		0x12U
 /* E_OK and *on (0/1) for a valid test frame, else E_PAR */
 IMPORT ER  comms_decode_bc_test(const UB *buf, INT len, UW *on);
 

@@ -33,7 +33,12 @@
    module.  IR_C_DO_BLACK_HIGH: 1 = DO is high (LED off) over black,
    the usual LM393 module; set 0 if the CENTRE bar fills on WHITE. */
 /* IR_L is the barcode sensor (28 Oct): it feeds the Code 39 reader
-   only and never steers the car */
+   only and never steers the car.
+   13 Nov: IR_L is wired to its module's AO (analogue) pin on GP26/ADC0,
+   no longer DO.  No pull-up on GP26 (IR_DO_PULLUP_PIN stays 0).  The
+   reader switches at the middle of the black and white levels it sees
+   (BC_ADAPT in line_sense.h), so the blue screw on the IR_L module no
+   longer matters. */
 #define IR_BARCODE_SENSOR	0U
 /* 0 = barcodes are read and logged but the car does NOT act on them
    (movement testing, 28 Oct).  Set 1 for the real course. */
@@ -50,6 +55,10 @@
 #define IR_C_DIGITAL		1
 #define IR_C_DO_PIN		7	/* the CENTRE module's DO wire goes to GP7 (28 Oct) */
 #define IR_C_DO_BLACK_HIGH	1
+#define IR_R_DIGITAL		0	/* 16 Nov: RIGHT on DO: fixed 0..4095 scale (task_line.c sensor_norm) */
+/* Confirmed wiring: MIDDLE DO is read on GP7; RIGHT DO remains on the
+   existing swapped ADC input (GP27). ADC averaging of its 0/4095 levels
+   is retained. LEFT AO (GP26) is never used to steer the car. */
 
 /* ---------------------------------------------------------------------
  *  IF-08  Latest line error + timestamp (line_task -> motion_task)

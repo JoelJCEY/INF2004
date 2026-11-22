@@ -10,13 +10,29 @@ gcc $CF -DAPP_TEST=1 -o hosttest main.c stubs.c \
   $A/subsystem1/telemetry_codec.c $A/subsystem1/subsystem1_test.c \
   $A/subsystem2/motion_ctrl.c $A/subsystem2/subsystem2_test.c \
   $A/subsystem3/line_sense.c $A/subsystem3/subsystem3_test.c \
-  $A/subsystem4/hump.c $A/subsystem4/subsystem4_test.c \
+  $A/subsystem4/hump.c $A/subsystem4/lift.c $A/subsystem4/subsystem4_test.c \
   $A/subsystem5/scan_profile.c $A/subsystem5/ctrl_logic.c \
   $A/subsystem5/drv_ultrasonic.c $A/subsystem5/subsystem5_test.c
 ./hosttest | grep -E "FAIL|SUMMARY|info"
 gcc $CF -w -o simmotion simmotion.c $A/subsystem2/task_motion.c \
   $A/subsystem2/motion_ctrl.c $A/subsystem2/motion_api.c -lm
 ./simmotion
+gcc $CF -o simline simline.c $A/subsystem3/task_line.c $A/subsystem3/line_sense.c
+./simline right
+./simline left
+./simline long-left
+./simline barcode-only
+./simline lost-stop
+./simline cross
+./simline skew-cross
+./simline barcode-cross
+./simline pivot-cross
+./simline weak-cross
+rm -f simline
+gcc $CF -ffunction-sections -fdata-sections -Wl,--gc-sections -o simctrl simctrl.c \
+  $A/subsystem5/ctrl_logic.c $A/subsystem2/motion_api.c
+./simctrl
+rm -f simctrl
 python3 ../is11_mqtt.py selftest
 rm -f hosttest simmotion
 # Sensor bench (app_program/sensor_bench.c) against a scripted user:

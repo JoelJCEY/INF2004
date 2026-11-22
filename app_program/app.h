@@ -137,6 +137,7 @@ IMPORT volatile UW app_barcode_map;
    retained: a reboot always comes back in normal mode.
    ONE writer: comms_bridge_on_command() (subsystem 1). */
 IMPORT volatile UW app_barcode_test;
+IMPORT volatile UW app_song_req;	/* 16 Nov: dashboard song, seq<<8 | id */
 
 /* Movement for a letter under a map; BC_UNRECOGNISED if not in it */
 Inline BARCODE_CMD app_barcode_lookup(UW map, UB letter)
@@ -185,7 +186,8 @@ typedef enum {
 #define FLT_ENCODER	0x02U	/* motion_task  -> FAULT STOP           */
 #define FLT_IMU		0x04U	/* imu_task     -> FAULT STOP           */
 #define FLT_BYPASS	0x08U	/* ctrl_task    -> FAULT STOP (2 fails) */
-#define FLT_IMPACT	0x10U	/* imu_task     -> STOPPED              */
+#define FLT_LIFTED	0x10U	/* imu_task: lifted / overturned (13 Nov,
+				   was impact) -> motors stop at once    */
 #define FLT_LINE_LOST	0x20U	/* line_task    -> STOPPED              */
 #define FLT_NO_ECHO	0x40U	/* scan_task    -> failed bypass attempt*/
 #define FLT_WIFI	0x80U	/* comms_task   -> reported only (T9)   */

@@ -6,6 +6,20 @@
  */
 
 #include "ctrl_logic.h"
+#include "../subsystem3/line_sense.h"
+
+EXPORT BOOL ctrl_junction_can_act(VEHICLE_STATE s)
+{
+	return (s == VS_LINE_FOLLOWING || s == VS_HUMP_CROSSING) ? TRUE : FALSE;
+}
+
+EXPORT BOOL ctrl_turn_centred(UW word, UW now_ms, UW centre_norm)
+{
+	return (((line_unpack_flags(word) & (LINE_F_VALID | LINE_F_ON_LINE)) ==
+		 (LINE_F_VALID | LINE_F_ON_LINE)) &&
+		line_unpack_age_ms(word, now_ms) <= 60U &&
+		centre_norm >= LINE_BLACK_N) ? TRUE : FALSE;
+}
 
 EXPORT BOOL ctrl_is_active(VEHICLE_STATE s)
 {
@@ -45,8 +59,17 @@ EXPORT VEHICLE_STATE ctrl_on_faults(VEHICLE_STATE s, UINT faults)
 	if ((faults & FLT_STOP_FAULTS) != 0U) {
 		return VS_FAULT_STOP;		/* from any state */
 	}
-	if (((faults & FLT_IMPACT) != 0U) && ctrl_is_active(s)) {
-		return VS_STOPPED;
+	/* 13 Nov: lifted or overturned: stop every motor at once.  Driving
+	   -> STOPPED (the demo's end of run; put it down and START to go
+	   on).  During the start-up checks (which drive the wheels) -> FAULT
+	   STOP: RESET reruns them. */
+	if ((faults & FLT_LIFTED) != 0U) {
+		if (ctrl_is_active(s)) {
+			return VS_STOPPED;
+		}
+		if (s == VS_INITIALISING) {
+			return VS_FAULT_STOP;
+		}
 	}
 	if (((faults & FLT_LINE_LOST) != 0U) &&
 	    ((s == VS_LINE_FOLLOWING) || (s == VS_HUMP_CROSSING))) {

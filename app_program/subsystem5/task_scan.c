@@ -59,24 +59,20 @@ LOCAL UW	last_depth_mm;		/* fixed estimate from the last profile */
 /* 4 Nov: GLANCE scan while driving.  The beam is ~15 deg wide, so looking
    only straight ahead it covers +-2.6 cm at 20 cm: an obstacle a few cm
    off the line could be missed and clipped by the car's corner.  The
-   sensor now cycles right / centre / left / centre by GLANCE_DEG.  Each
-   reading becomes a point; the car stops only for a point that is IN
-   ITS PATH (sideways within half width + margin) and closer than the
-   stop distance AHEAD.  GLANCE_DEG 0 = old straight-ahead watching. */
-#define GLANCE_DEG		10	/* 10 or 15 */
-#define GLANCE_STEPS		(GLANCE_DEG / 5)
+   sensor now cycles over several angles.  Each reading becomes a point;
+   the car stops only for a point that is IN ITS PATH (sideways within
+   half width + margin) at the stop distance AHEAD.
+   13 Nov: +-10 deg covered only 12.6 cm at 20 cm (car: 16 cm); now
+   70..110 deg with a memory (scan_profile.h). */
 #define GLANCE_SETTLE_MS	40	/* after the (ramped) move, before the ping */
-#define GLANCE_HITS		2	/* stop: one position hits twice in a row, or
-					   two positions see something at once */
-LOCAL const INT glance_seq[4] = { -GLANCE_STEPS, 0, GLANCE_STEPS, 0 };	/* R, C, L, C */
-LOCAL const UB	glance_pos[4] = { 0, 1, 2, 1 };	/* counter per position: R, C, L */
+/* 13 Nov: 5 angles (70..110 deg) and a memory of what was seen, so the
+   whole car width is covered (scan_profile.h, GLANCE_xxx / gmem_xxx) */
 LOCAL UINT	glance_i;
-LOCAL UB	glance_hits[3];			/* in-path hits in a row, per position */
+LOCAL UW	glance_no;
+LOCAL GLANCE_MEM gmem;
 LOCAL void glance_clear(void)
 {
-	glance_hits[0] = 0;
-	glance_hits[1] = 0;
-	glance_hits[2] = 0;
+	gmem_clear(&gmem);
 }
 
 
@@ -156,6 +152,7 @@ LOCAL BOOL confirmed(const SCAN_SWEEP *sw, UW *hits_out, UW *near_out)
 	INT	i, run = 0, best = 0;
 	UW	d, nearest = 0xFFFFU;
 	W	x;
+	BOOL	end_hit = FALSE;
 
 	for (i = SCAN_IDX_MAX; i >= SCAN_IDX_MIN; i--) {
 		d = sw->dist[i];
@@ -165,6 +162,9 @@ LOCAL BOOL confirmed(const SCAN_SWEEP *sw, UW *hits_out, UW *near_out)
 		    (x <= (SCAN_CAR_HALF_W_MM + SCAN_MARGIN_MM))) {
 			run++;
 			if (d < nearest) nearest = d;
+			if ((i == SCAN_IDX_MIN) || (i == SCAN_IDX_MAX)) {
+				end_hit = TRUE;	/* 13 Nov: object off to the side */
+			}
 		} else {
 			run = 0;
 		}
@@ -172,7 +172,7 @@ LOCAL BOOL confirmed(const SCAN_SWEEP *sw, UW *hits_out, UW *near_out)
 	}
 	*hits_out = (UW)best;
 	*near_out = (nearest == 0xFFFFU) ? 0U : nearest;
-	return (best >= SCAN_CONFIRM_HITS) ? TRUE : FALSE;
+	return scan_confirm_run(best, end_hit);
 }
 
 /* Sweep of the front, left (120°) to right (70°) in 5°
@@ -283,6 +283,7 @@ EXPORT void scan_task(INT stacd, void *exinf)
 	BOOL		guard_sent = FALSE;
 	UW		pause_start = 0;
 	UW		last_req;
+	UW		last_state = 0xFFU;
 
 	(void)stacd; (void)exinf;
 
@@ -323,11 +324,17 @@ EXPORT void scan_task(INT stacd, void *exinf)
 				paused = FALSE;
 			}
 
+			if (ms.state != last_state) {
+				glance_clear();		/* new state (turned, etc.): forget */
+				last_state = ms.state;
+			}
 			{
 				UINT	gidx = (UINT)((INT)SERVO_CENTRE_IDX + glance_seq[glance_i]);
-				UB	gp = glance_pos[glance_i];
+				W	path = (W)(motion_odo_path_01mm / 10U);
+				W	pred;
 
-				glance_i = (glance_i + 1U) % 4U;
+				glance_i = (glance_i + 1U) % GLANCE_SEQ_N;
+				glance_no++;
 				r = glance_ping(gidx, &mm);
 				if (r == US_OK) {
 					W	side = ((W)mm * scan_cos1000(gidx)) / 1000;	/* + = right */
@@ -338,37 +345,31 @@ EXPORT void scan_task(INT stacd, void *exinf)
 					/* Below US_MIN_VALID_MM the HC-SR04 is not reliable
 					   (its own bracket, wires, ringing): ignored */
 					if (SCAN_ENABLE && (mm >= US_MIN_VALID_MM) &&
-					    (ahead < SCAN_STOP_DIST_MM) &&
+					    (ahead < GLANCE_LOOK_MM) &&
 					    (APP_ABS(side) <= (SCAN_CAR_HALF_W_MM + SCAN_MARGIN_MM))) {
-						INT	busy;
-
-						if (glance_hits[gp] < 255U) {
-							glance_hits[gp]++;
-						}
-						busy = (glance_hits[0] > 0U) + (glance_hits[1] > 0U) +
-						       (glance_hits[2] > 0U);
-						confirm = ((glance_hits[gp] >= GLANCE_HITS) || (busy >= 2)) ?
-							  GLANCE_HITS : 0;
-						if ((confirm >= GLANCE_HITS) && !alerted) {
-							alerted = TRUE;
-							send_kind(OB_ALERT);
-							app_log((UB*)"scan: something at %d mm, %d deg (%d mm ahead, %d mm %s), stopping to check\n",
-								  mm, SERVO_IDX_TO_DEG(gidx), ahead, APP_ABS(side),
-								  (side >= 0) ? "right" : "left");
-						}
-					} else {
-						glance_hits[gp] = 0;	/* clear here: only this position */
+						gmem_add(&gmem, path, ahead, side, glance_no);
 					}
 				} else if (r == US_FAR) {
 					noecho = 0;
-					glance_hits[gp] = 0;
 					set_state(SC_WATCHING, US_FAR_MM);
 				} else {
-					/* no echo: no information, keep the counts */
+					/* no echo: no information */
 					if (++noecho == NO_ECHO_LIMIT) {
 						app_report_fault(FLT_NO_ECHO);	/* reported, latched */
 						app_log((UB*)"scan: no echo x3\n");
 					}
+				}
+				/* Stop when a remembered (seen twice) object is
+				   predicted at the stop distance, even if the beam
+				   has moved off it */
+				path = (W)(motion_odo_path_01mm / 10U);
+				pred = gmem_ahead(&gmem, path, glance_no);
+				if ((pred != GMEM_NONE) && (pred < SCAN_STOP_DIST_MM) && !alerted) {
+					alerted = TRUE;
+					confirm = 2;
+					send_kind(OB_ALERT);
+					app_log((UB*)"scan: something %d mm ahead (servo now %d deg), stopping to check\n",
+						  pred, SERVO_IDX_TO_DEG(gidx));
 				}
 			}
 			break;

@@ -32,15 +32,10 @@
 #define FF_PERMILLE_PER_M_S	1500	/* duty per 1 m/s                */
 #define LOST_SPIN_MM_S		60	/* wheel speed when spinning back to the line */
 #define SYNC_DEADBAND		13	/* counts, ~1 mm: L/R difference ignored (31 Oct) */
-/* Straight-line wheel sync while FOLLOWING (2 Nov): while the line error
-   is 0 the car should go straight, but the two motors are never equal, so
-   with the same power one wheel runs faster and the car drifts until the
-   sensors pull it back.  Now, while the error is 0, the left/right count
-   difference since the straight began is driven to zero (same PI as the
-   measured moves).  Its integral is kept through curves as a learned
-   motor trim, so the weaker motor gets its extra power straight away on
-   the next straight.  See MOTION_SYNC_R_X1000 in subsystem2.h. */
-#define FOLLOW_SYNC_LOG_MS	1000	/* print speeds while following (0 = off) */
+/* Each wheel has its own speed PI while following. Steering changes the
+   wheel speed ratio, rather than subtracting raw PWM from the inner wheel. */
+#define FOLLOW_SYNC_LOG_MS 1000
+#define FOLLOW_WHEEL_RAMP 6 /* mm/s per 20 ms tick */
 /* Gradual steering while FOLLOWING (2 Nov): the steering part of the
    duty (right minus left, halved) and the forward part each move toward
    their new value by at most this much per 20 ms tick, instead of
@@ -49,6 +44,8 @@
    car does not jerk (and the barcode sensor is not thrown across the
    bars).  Smaller = smoother but slower to react. */
 #define STEER_SLEW_PER_TICK	30	/* duty permille per tick */
+#define STEER_ENTER_PER_TICK	18	/* ease into a curve */
+#define STEER_EXIT_PER_TICK	40	/* remove residual yaw promptly */
 #define ACCEL_MM_S_PER_TICK	12	/* 600 mm/s^2 setpoint ramp       */
 #define SLEW_PERMILLE_PER_TICK	60	/* soft start: 0 -> 600 in 200 ms */
 #define SPEED_AVG_TICKS		3	/* average over 60 ms (VA Buddy 2)*/
@@ -98,17 +95,17 @@ typedef struct {
 	W		st_ref;		/* SELFTEST reference count  */
 	BOOL		st_ok;
 	INT		line_err;	/* last fresh line error     */
-	BOOL		straight;	/* following with error 0    */
+	INT		line_filtered;
+	BOOL		searching;
+	W		follow_v[2];	/* ramped per-wheel targets */
 	INT		fwd;		/* forward duty now (slewed) */
 	INT		steer;		/* steering duty now (slewed) */
-	W		base_l;		/* counts when it began      */
-	W		base_r;
 	UW		log_ms;
 } MOTION_CTX;
 
 LOCAL MOTION_CTX	mc;
 LOCAL MOTION_PID	pid_speed;	/* common mode: speed            */
-LOCAL MOTION_PID	pid_line;	/* differential: line error      */
+LOCAL MOTION_PID	pid_follow[2];	/* independent wheel speed loops */
 LOCAL MOTION_PID	pid_sync;	/* differential: L/R count sync  */
 LOCAL MOTION_STALL	stall[2];	/* per wheel: one blocked wheel is a stall */
 
@@ -148,7 +145,8 @@ LOCAL void set_mode(MOTION_MODE m)
 	if (m != mc.mode) {
 		/* VA2: clear the integrators whenever the mode changes */
 		motion_pid_reset(&pid_speed);
-		motion_pid_reset(&pid_line);
+		motion_pid_reset(&pid_follow[0]);
+		motion_pid_reset(&pid_follow[1]);
 		motion_pid_reset(&pid_sync);
 		motion_stall_reset(&stall[0]);
 		motion_stall_reset(&stall[1]);
@@ -157,6 +155,10 @@ LOCAL void set_mode(MOTION_MODE m)
 		mc.settle = 0;
 		mc.fwd = 0;
 		mc.steer = 0;
+		mc.line_err = 0;
+		mc.line_filtered = 0;
+		mc.searching = FALSE;
+		mc.follow_v[0] = mc.follow_v[1] = 0;
 		mc.mode = m;
 		motion_mode_word = (UW)m;
 	}
@@ -275,7 +277,6 @@ LOCAL void handle_cmd(const MOTION_CMD *cmd)
 	switch (cmd->op) {
 	case MC_FOLLOW_LINE:
 		set_mode(MM_FOLLOW);
-		mc.straight = FALSE;
 		mc.cruise = (speed != 0) ? speed : MOTION_CRUISE_MM_S;
 		break;
 	case MC_MOVE:
@@ -323,8 +324,10 @@ LOCAL INT feedforward(W v)
 /* Common-mode duty for a magnitude setpoint and measured magnitude */
 LOCAL INT common_duty(W v_meas)
 {
-	return feedforward(mc.v_set) +
+	/* A magnitude controller must never reverse the requested direction. */
+	INT duty = feedforward(mc.v_set) +
 	       (INT)motion_pid_step(&pid_speed, mc.v_set - v_meas);
+	return APP_CLAMP(duty, 0, MOTOR_DUTY_MAX);
 }
 
 /* Move cur toward tgt by at most step */
@@ -342,8 +345,10 @@ LOCAL INT step_toward(INT cur, INT tgt, INT step)
 /* Gradual steering: forward and steering parts slewed, then the duties */
 LOCAL void follow_output(INT fwd_target, INT steer_target)
 {
+	INT steer_step = (APP_ABS(steer_target) < APP_ABS(mc.steer)) ?
+		STEER_EXIT_PER_TICK : STEER_ENTER_PER_TICK;
 	mc.fwd = step_toward(mc.fwd, fwd_target, STEER_SLEW_PER_TICK);
-	mc.steer = step_toward(mc.steer, steer_target, STEER_SLEW_PER_TICK);
+	mc.steer = step_toward(mc.steer, steer_target, steer_step);
 	mc.duty_l = mc.fwd - mc.steer;
 	mc.duty_r = mc.fwd + mc.steer;
 }
@@ -365,67 +370,83 @@ LOCAL void run_follow(void)
 	   at once instead of driving a wide circle (28 Oct) */
 	if (APP_ABS(mc.line_err) >= LINE_ERR_MAX) {
 		INT	dir = (mc.line_err > 0) ? 1 : -1;	/* +1 = left */
+		if (!mc.searching) {
+			motion_pid_reset(&pid_speed);
+			motion_pid_reset(&pid_follow[0]);
+			motion_pid_reset(&pid_follow[1]);
+			mc.follow_v[0] = mc.follow_v[1] = 0;
+			mc.searching = TRUE;
+		}
 
 		/* jump straight to spin speed: react at once */
-		mc.straight = FALSE;
 		mc.v_set = limited(LOST_SPIN_MM_S);
 		common = common_duty((APP_ABS(v_l) + APP_ABS(v_r)) / 2);
 		/* spin = no forward part, all steering: reached gradually */
 		follow_output(0, dir * common);
 		return;
 	}
+	if (mc.searching) {
+		motion_pid_reset(&pid_speed);
+		motion_pid_reset(&pid_follow[0]);
+		motion_pid_reset(&pid_follow[1]);
+		mc.line_filtered = 0;
+		mc.searching = FALSE;
+	}
+	/* 40 ms low-pass: reject DO steps and avoid derivative kicks. */
+	if (mc.line_err == 0 && mc.line_filtered > 0) {
+		/* A left arc is inferred from temporary loss of C/R. On
+		   reacquisition, ease that curvature out rather than cancelling
+		   it in one tick and accelerating the inner wheel abruptly. */
+		mc.line_filtered -= (mc.line_filtered + 3) / 4;
+	} else {
+		mc.line_filtered += (mc.line_err - mc.line_filtered) / 2;
+	}
+	if (APP_ABS(mc.line_filtered) < 12) mc.line_filtered = 0;
+	if (mc.line_err == 0 && mc.line_filtered < 0) {
+		/* The centre is back on the line or a crossing requests straight.
+		   Remove the old turn request; wheel targets and PWM still ramp.
+		   Keep each speed integrator so motor imbalance stays corrected. */
+		mc.line_filtered = 0;
+	}
 
-	/* Slow down in corners: full line error = half cruise speed */
+	/* The outer wheel sets the pace. Inner wheel target remains forward,
+	   even at the strongest normal correction: a rolling arc, not a pivot. */
 	mc.v_set = motion_ramp(mc.v_set,
-			       (limited(mc.cruise) * (2000 - APP_ABS(mc.line_err))) / 2000,
-			       ACCEL_MM_S_PER_TICK);
-	/* Speed loop on the FASTER wheel: with the average, a slow inner
-	   wheel made the outer wheel run at up to twice the setpoint. */
-	common = common_duty((v_l > v_r) ? v_l : v_r);
-	/* err > 0: line to the left -> right wheel faster */
-	diff = (INT)motion_pid_step(&pid_line, mc.line_err);
-
-	/* Straight-line wheel sync (see FOLLOW_SYNC_LOG_MS above) */
+		(limited(mc.cruise) * (3000 - APP_ABS(mc.line_filtered))) / 3000,
+		ACCEL_MM_S_PER_TICK);
 	{
-		INT	sync;
-
-		if (mc.line_err == 0) {
-			W	e;
-
-			if (!mc.straight) {
-				mc.straight = TRUE;	/* new straight: measure from here */
-				mc.base_l = cnt_l;
-				mc.base_r = cnt_r;
-			}
-			/* left ahead of right -> e > 0 -> slow left, speed up right */
-			e = (cnt_l - mc.base_l) -
-			    (((cnt_r - mc.base_r) * MOTION_SYNC_R_X1000) / 1000);
-			e = (e > SYNC_DEADBAND) ? (e - SYNC_DEADBAND) :
-			    (e < -SYNC_DEADBAND) ? (e + SYNC_DEADBAND) : 0;
-			sync = (INT)motion_pid_step(&pid_sync, e);
-		} else {
-			/* steering: keep only the learned motor trim (integral) */
-			mc.straight = FALSE;
-			sync = (INT)((pid_sync.ki_q8 * pid_sync.i_acc) / 256);
-			sync = APP_CLAMP(sync, -(INT)pid_sync.out_limit, (INT)pid_sync.out_limit);
+		W outer = mc.v_set;
+		W inner = (outer * (1000 - APP_ABS(mc.line_filtered))) / 1000;
+		W target[2];
+		W measured[2] = {v_l, v_r};
+		INT duty[2];
+		UINT i;
+		measured[1] = (measured[1] * MOTION_SYNC_R_X1000) / 1000;
+		/* Avoid targets too low for continuous wheel rotation. */
+		if (outer >= 20 && inner < 20) inner = 20;
+		target[0] = (mc.line_filtered > 0) ? inner : outer;
+		target[1] = (mc.line_filtered < 0) ? inner : outer;
+		for (i = 0; i < 2; i++) {
+			mc.follow_v[i] = motion_ramp(mc.follow_v[i], target[i], FOLLOW_WHEEL_RAMP);
+			duty[i] = feedforward(mc.follow_v[i]) +
+				(INT)motion_pid_step(&pid_follow[i], mc.follow_v[i] - measured[i]);
+			duty[i] = APP_CLAMP(duty[i], 0, MOTOR_DUTY_MAX);
 		}
-		diff += sync;
+		common = (duty[0] + duty[1]) / 2;
+		diff = (duty[1] - duty[0]) / 2;
 #if FOLLOW_SYNC_LOG_MS > 0
-		if ((app_time_ms() - mc.log_ms) >= FOLLOW_SYNC_LOG_MS) {
-			mc.log_ms = app_time_ms();
-			app_log((UB*)"motion: follow %s  speed L %d R %d mm/s  counts L %d R %d  trim %d\n",
-				mc.straight ? "straight" : "steering", v_l, v_r,
-				cnt_l - mc.base_l, cnt_r - mc.base_r, sync);
+		if ((now - mc.log_ms) >= FOLLOW_SYNC_LOG_MS) {
+			mc.log_ms = now;
+			app_log((UB*)"motion: follow speed L %d R %d mm/s target L %d R %d\n",
+				v_l, v_r, mc.follow_v[0], mc.follow_v[1]);
 		}
 #endif
 	}
-	/* Steering slows the inner wheel to a quarter at most: the car
-	   arcs back to the line instead of pivoting on one wheel */
-	if (common > 0) {
-		diff = APP_CLAMP(diff, -(common * 3) / 4, (common * 3) / 4);
-	}
-
 	follow_output(common, diff);
+	/* Separate forward/steering ramps can briefly disagree on spin exit.
+	   Normal line following must never command a reverse wheel. */
+	if (mc.duty_l < 0) mc.duty_l = 0;
+	if (mc.duty_r < 0) mc.duty_r = 0;
 }
 
 /* MOVE and TURN share the same structure.  TURN: dir +1 = left (CCW):
@@ -680,8 +701,8 @@ EXPORT void motion_task(INT stacd, void *exinf)
 
 	/* Speed PI: error mm/s -> duty permille */
 	motion_pid_init(&pid_speed, 256, 26, 0, 3000, 400);
-	/* Line PD: error -1000..1000 -> differential duty permille */
-	motion_pid_init(&pid_line, 160, 0, 64, 0, 500);	/* Kp 0.62, Kd 0.25 (28 Oct: less zig-zag on sensor steps) */
+	motion_pid_init(&pid_follow[0], 256, 26, 0, 3000, 400);
+	motion_pid_init(&pid_follow[1], 256, 26, 0, 3000, 400);
 	/* Count sync PI: count difference -> differential duty */
 	/* 31 Oct: ~13.5 counts per mm.  The old gains (15 duty per count,
 	   limit 200) maxed out on a 1 mm difference and made the car shake

@@ -8,6 +8,7 @@
 #include "comms_bridge.h"
 #include "../subsystem5/subsystem5.h"	/* IF-03 mbf_remote, flg_sys */
 #include "../subsystem3/subsystem3.h"	/* live IR values */
+#include "../subsystem4/subsystem4.h"	/* live lift / tilt values */
 #include "../subsystem5/scan_profile.h"	/* SCAN_POSITIONS */
 
 EXPORT volatile UW comms_mqtt_connected;	/* writer: Wi-Fi task (bridge) */
@@ -16,6 +17,8 @@ EXPORT volatile UW comms_rx_rejected;
 EXPORT volatile UW app_barcode_map = APP_BARCODE_MAP_DEFAULT;
 /* Barcode test mode (app.h).  Only writer: comms_bridge_on_command() */
 EXPORT volatile UW app_barcode_test = 0U;
+/* 16 Nov: song request (app.h).  Only writer: comms_bridge_on_command() */
+EXPORT volatile UW app_song_req = 0U;
 
 LOCAL void on_map_frame(const unsigned char *data, int len)
 {
@@ -61,6 +64,15 @@ void comms_bridge_on_command(const unsigned char *data, int len)
 		on_map_frame(data, len);
 		return;
 	}
+	if ((len == WIRE_SONG_LEN) && (data[0] == 1U) && (data[1] == (UB)WIRE_OP_SONG)) {
+		if (data[3] <= 6U) {
+			/* sequence in bits 8..15, so the same song can be replayed */
+			app_song_req = ((UW)data[2] << 8) | (UW)data[3];
+		} else {
+			comms_rx_rejected++;
+		}
+		return;
+	}
 	if ((len == WIRE_TEST_LEN) && (data[1] == (UB)WIRE_OP_BC_TEST)) {
 		UW	on;
 
@@ -103,6 +115,22 @@ int comms_bridge_peek_log(unsigned char *buf, int max)
 void comms_bridge_pop_log(void)
 {
 	app_log_pop();
+}
+
+/* 13 Nov: live lift / tilt for the dashboard (is11/car/imu, 10 Hz):
+   see the format below (subsystem4.h) */
+int comms_bridge_imu_text(unsigned char *buf, int max)
+{
+	/* "cos1000 up_mg now count fx fy fz bx by bz" (mg; f = filtered
+	   reading now, b = the start-up "flat").  Worst case ~60 chars. */
+	if (max < 80) {
+		return 0;
+	}
+	return (int)tm_sprintf((UB*)buf, (const UB*)"%d %d %d %d %d %d %d %d %d %d",
+			       (INT)imu_tilt_cos1000, (INT)imu_up_mg,
+			       (INT)imu_lift_now, (INT)(imu_lift_count & 0xFFFFU),
+			       (INT)imu_acc_filt[0], (INT)imu_acc_filt[1], (INT)imu_acc_filt[2],
+			       (INT)imu_base_mg[0], (INT)imu_base_mg[1], (INT)imu_base_z_mg);
 }
 
 /* Live IR snapshot for the dashboard (is11/car/ir, 10 Hz):

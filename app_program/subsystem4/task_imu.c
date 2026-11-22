@@ -11,29 +11,41 @@
  *	    car braking or accelerating (F12: forward acceleration tilts the
  *	    measured gravity vector)
  *	  - hump detector over encoder distance (hump.c)
- *	  - impact: |a| far from 1 g (higher threshold on a hump)
+ *	  - 13 Nov: LIFTED or OVERTURNED (lift.h) instead of impact: the car
+ *	    stops at once (lifting it is the demo's end-of-run signal)
  */
 
 #include "subsystem4.h"
 #include "drv_lsm303.h"
 #include "hump.h"
+#include "lift.h"
 #include "../subsystem2/subsystem2.h"	/* IF-07 odometry */
 #include "../subsystem5/subsystem5.h"	/* IF-11, flg_sys */
+#include "../subsystem5/ctrl_logic.h"	/* ctrl_is_active */
 
 
 EXPORT volatile W  imu_acc_raw[3];
 EXPORT volatile W  imu_mag_raw[3];
 EXPORT volatile W  imu_base_mg[2];
+EXPORT volatile W  imu_base_z_mg = 1000;
+EXPORT volatile W  imu_acc_filt[3];
 EXPORT volatile UW imu_reads_ok;
 EXPORT volatile UW imu_reads_fail;
+EXPORT volatile W  imu_tilt_cos1000 = 1000;
+EXPORT volatile W  imu_up_mg;
+EXPORT volatile UW imu_lift_now;
+EXPORT volatile UW imu_lift_count;
 
 #define BASELINE_SAMPLES	50
+#define BASELINE_SKIP		10	/* 13 Nov: first 0.2 s after power-on ignored */
+#define BASELINE_STILL_MG	80	/* max spread per axis while learning "flat" */
+#define BASELINE_TRIES		3
 #define LPF_SHIFT		2	/* IIR, alpha = 1/4 */
 #define GATE_DV_MM_S		6	/* per tick = 300 mm/s^2 */
 #define GATE_HOLD_TICKS		15	/* keep holding 300 ms after a speed change (body pitch settles) */
-#define IMPACT_MG		2500	/* deviation from 1 g (set from logs) */
-#define IMPACT_HUMP_MG		4000	/* landing off a hump is not an impact */
-#define IMPACT_HOLDOFF_TICKS	25	/* 500 ms between impact reports */
+/* 13 Nov: collision (impact) detection removed by the requirement
+   change.  Lifted / overturned instead (lift.h). */
+#define LIFT_HOLDOFF_TICKS	50	/* 1 s between lift reports */
 #define TURN_DIFF_MM_S		80
 #define STATIONARY_MM_S		10
 #define I2C_FAIL_LIMIT		10
@@ -41,6 +53,7 @@ EXPORT volatile UW imu_reads_fail;
 EXPORT volatile UW imu_status_word;
 
 LOCAL HUMP_DET	hump;
+LOCAL LIFT_DET	lift;
 
 EXPORT void imu_cyclic_handler(void *exinf)
 {
@@ -78,13 +91,23 @@ LOCAL void wait_for_imu(void)
 	}
 }
 
+/* 13 Nov: TRUE while the car is driving (motors may be running).  Only
+   asked when a lift / overturn is seen, so the mission mutex is rare. */
+LOCAL BOOL car_driving(void)
+{
+	MISSION_STATE	ms;
+
+	ctrl_get_mission(&ms);
+	return ctrl_is_active((VEHICLE_STATE)ms.state);
+}
+
 EXPORT void imu_task(INT stacd, void *exinf)
 {
 	LSM303_ACC	a;
 	LSM303_MAG	mag;
 	W		fx = 0, fy = 0, fz = 1000;
 	W		x0 = 0, y0 = 0;
-	W		sx = 0, sy = 0;
+	W		sx = 0, sy = 0, sz = 0;
 	INT		n = 0;
 	W		dh = 0, dh_held = 0, a_fwd, mag_mg, peak = 0;
 	H		v_prev = 0, v_now, v_l, v_r;
@@ -92,7 +115,6 @@ EXPORT void imu_task(INT stacd, void *exinf)
 	UINT		tick = 0;
 	UINT		holdoff = 0;
 	UINT		gate = 0;
-	UINT		hits = 0;	/* last 3 samples over the impact limit, 1 bit each */
 	UW		humps = 0;
 	W		run_peak_01mm = 0;
 	MOTION_EVENT_CLASS ev;
@@ -103,22 +125,61 @@ EXPORT void imu_task(INT stacd, void *exinf)
 	wait_for_imu();
 	hump_reset(&hump);
 
-	/* Level baseline: 1 s with the car still */
-	while (n < BASELINE_SAMPLES) {
-		tk_slp_tsk(TMO_FEVR);
-		if (drv_lsm303_read_acc(&a) == E_OK) {
-			sx += a.x;
-			sy += a.y;
-			n++;
+	/* Level baseline: 1 s with the car still.  13 Nov: the first
+	   readings after power-on are skipped, and if the car moved while
+	   it was measuring (spread over BASELINE_STILL_MG on any axis) it
+	   measures again, up to BASELINE_TRIES times (start-up limit 5 s). */
+	{
+		INT	tries = 0;
+		INT	skip = BASELINE_SKIP;
+		W	lo[3], hi[3];
+		BOOL	again = TRUE;
+
+		while (again) {
+			sx = 0; sy = 0; sz = 0; n = 0;
+			lo[0] = lo[1] = lo[2] = 32767;
+			hi[0] = hi[1] = hi[2] = -32768;
+			while (n < BASELINE_SAMPLES) {
+				tk_slp_tsk(TMO_FEVR);
+				if (drv_lsm303_read_acc(&a) != E_OK) {
+					continue;
+				}
+				if (skip > 0) {
+					skip--;
+					continue;
+				}
+				sx += a.x;
+				sy += a.y;
+				sz += a.z;
+				lo[0] = (a.x < lo[0]) ? a.x : lo[0];	hi[0] = (a.x > hi[0]) ? a.x : hi[0];
+				lo[1] = (a.y < lo[1]) ? a.y : lo[1];	hi[1] = (a.y > hi[1]) ? a.y : hi[1];
+				lo[2] = (a.z < lo[2]) ? a.z : lo[2];	hi[2] = (a.z > hi[2]) ? a.z : hi[2];
+				n++;
+			}
+			tries++;
+			again = FALSE;
+			if (((hi[0] - lo[0]) > BASELINE_STILL_MG) || ((hi[1] - lo[1]) > BASELINE_STILL_MG) ||
+			    ((hi[2] - lo[2]) > BASELINE_STILL_MG)) {
+				if (tries < BASELINE_TRIES) {
+					app_log((UB*)"imu: car moved while learning flat (spread %d/%d/%d mg): measuring again\n",
+						  hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+					again = TRUE;
+				} else {
+					app_log((UB*)"imu: car kept moving while learning flat: using it anyway (power on with the car still)\n");
+				}
+			}
 		}
 	}
 	x0 = sx / BASELINE_SAMPLES;
 	y0 = sy / BASELINE_SAMPLES;
 	fx = x0;
 	fy = y0;
+	fz = sz / BASELINE_SAMPLES;
+	lift_init(&lift, x0, y0, fz);	/* "down" = the level reading */
 	imu_base_mg[0] = x0;
 	imu_base_mg[1] = y0;
-	app_log((UB*)"imu: baseline x %d mg, y %d mg\n", x0, y0);
+	imu_base_z_mg = fz;
+	app_log((UB*)"imu: baseline x %d mg, y %d mg, z %d mg\n", x0, y0, fz);
 	(void)tk_set_flg(flg_sys, EVF_IMU_READY);
 
 	while (1) {
@@ -151,30 +212,48 @@ EXPORT void imu_task(INT stacd, void *exinf)
 		fx += (a.x - fx) >> LPF_SHIFT;
 		fy += (a.y - fy) >> LPF_SHIFT;
 		fz += (a.z - fz) >> LPF_SHIFT;
+		imu_acc_filt[0] = fx;	/* dashboard only (is11/car/imu) */
+		imu_acc_filt[1] = fy;
+		imu_acc_filt[2] = fz;
 		mag_mg = (W)hump_isqrt((UW)((fx * fx) + (fy * fy) + (fz * fz)));
 
-		/* Impact uses the raw reading: filtering would hide the spike */
+		/* 13 Nov: LIFTED or OVERTURNED -> stop the motors (lift.h).
+		   Raw reading for the lift push, filtered one for the tilt. */
 		{
-			W raw_mag = (W)hump_isqrt((UW)((a.x * a.x) + (a.y * a.y) + (a.z * a.z)));
-			W limit = (hump.state != HS_LEVEL) ? IMPACT_HUMP_MG : IMPACT_MG;
+			W		raw[3];
+			W		filt[3];
+			LIFT_RESULT	lr;
 
-			BOOL over = (APP_ABS(raw_mag - 1000) > limit) ? TRUE : FALSE;
-			UINT n_hits;
-
-			/* 2 of the last 3 samples: one bad sample (vibration,
-			   motor noise on I2C) is not an impact */
-			hits = ((hits << 1) | (over ? 1U : 0U)) & 0x7U;
-			n_hits = (hits & 1U) + ((hits >> 1) & 1U) + ((hits >> 2) & 1U);
+			raw[0] = a.x;	raw[1] = a.y;	raw[2] = a.z;
+			filt[0] = fx;	filt[1] = fy;	filt[2] = fz;
+			lr = lift_update(&lift, raw, filt, (hump.state != HS_LEVEL) ? TRUE : FALSE);
+			imu_tilt_cos1000 = lift.last_cos1000;
+			imu_up_mg = lift.last_up_mg;
+			imu_lift_now = (UW)lr;
 			if (holdoff > 0U) {
 				holdoff--;
-			} else if (over && (n_hits >= 2U)) {
-				holdoff = IMPACT_HOLDOFF_TICKS;
-				hits = 0;
-				app_report_fault(FLT_IMPACT);
-				send_terrain(TR_IMPACT, ME_IMPACT, 0);
-				app_log((UB*)"imu: IMPACT %d mg\n", raw_mag);
-			} else if (over) {
-				app_log((UB*)"imu: spike %d mg ignored\n", raw_mag);
+			} else if ((lr != LIFT_NONE) && !car_driving()) {
+				/* 13 Nov: motors are not running, nothing to stop.
+				   Picking the car up to place it, carrying it or
+				   pressing its buttons no longer latches a fault. */
+				holdoff = LIFT_HOLDOFF_TICKS;
+			} else if (lr != LIFT_NONE) {
+				holdoff = LIFT_HOLDOFF_TICKS;
+				imu_lift_count++;
+				app_report_fault(FLT_LIFTED);		/* ctrl_task stops the motors */
+				send_terrain(TR_LIFTED, ME_LIFTED, 0);
+				if (lr == LIFT_LIFTED) {
+					app_log((UB*)"imu: LIFTED (pushed up %d mg): motors stop\n",
+						  lift.last_up_mg);
+				} else {
+					app_log((UB*)"imu: OVERTURNED / tilted (cos %d/1000 from level): motors stop\n",
+						  lift.last_cos1000);
+				}
+			} else if ((lift.last_up_mg > 80) && ((tick % 25U) == 0U) && car_driving()) {
+				/* 16 Nov: near miss, so a lift that did not stop the
+				   car shows how hard it was pushed up */
+				app_log((UB*)"imu: push up %d mg (lift needs > %d)\n",
+					lift.last_up_mg, LIFT_UP_MG);
 			} else {
 				/* nothing */
 			}
@@ -220,8 +299,8 @@ EXPORT void imu_task(INT stacd, void *exinf)
 		/* Motion-event classification for telemetry */
 		v_l = motion_speed_left();
 		v_r = motion_speed_right();
-		if (holdoff > (IMPACT_HOLDOFF_TICKS - 5U)) {
-			ev = ME_IMPACT;
+		if (holdoff > (LIFT_HOLDOFF_TICKS - 5U)) {
+			ev = ME_LIFTED;
 		} else if (hump.state == HS_CLIMBING) {
 			ev = ME_CLIMBING;
 		} else if ((hump.state == HS_DESCENDING) || (hump.state == HS_REAR_CROSSING)) {

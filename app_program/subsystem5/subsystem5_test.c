@@ -11,6 +11,7 @@
 #include "drv_ultrasonic.h"
 #include "scan_profile.h"
 #include "ctrl_logic.h"
+#include "../subsystem4/hump.h"	/* hump_isqrt */
 #include "../test_report.h"
 
 #if APP_TEST
@@ -35,6 +36,54 @@ LOCAL void make_box(SCAN_SWEEP *s, W face_mm, W half_w, W wall_right_mm)
 			s->dist[i] = (UH)US_FAR_MM;
 		}
 	}
+}
+
+
+/* 13 Nov: drive towards a 5 cm round object at (side_mm right, ahead_mm)
+   at 60 mm/s with the 8-angle glance (one ping per 180 ms, ~15 deg
+   beam) and the glance memory.  Returns how far ahead the object really
+   was when the car decided to stop, or -999 if it never stopped. */
+LOCAL W glance_drive(W side_mm, W start_ahead_mm, BOOL stray)
+{
+	GLANCE_MEM	g;
+	UW		k;
+	W		path = 0;
+	INT		gi = 0;
+
+	gmem_clear(&g);
+	for (k = 1U; k < 200U; k++) {
+		UINT	idx = (UINT)((INT)SERVO_CENTRE_IDX + glance_seq[gi]);
+		W	c = scan_cos1000(idx), s = scan_sin1000(idx);
+		W	y = start_ahead_mm - path;
+		W	best = 0;
+		W	dx;
+		W	pred;
+
+		gi = (gi + 1) % GLANCE_SEQ_N;
+		for (dx = -25; dx <= 25; dx += 25) {	/* object edges and middle */
+			W x = side_mm + dx;
+			W r = (W)hump_isqrt((UW)((x * x) + (y * y)));
+			if ((y > 0) && (r > 0) && ((((x * c) + (y * s)) / r) >= 991)) {	/* within 7.5 deg */
+				if ((best == 0) || (r < best)) best = r;
+			}
+		}
+		if (stray && (k == 10U)) {
+			best = 250;			/* one stray echo */
+		}
+		if ((best >= 40) && (((best * s) / 1000) < GLANCE_LOOK_MM) &&
+		    (APP_ABS((best * c) / 1000) <= (SCAN_CAR_HALF_W_MM + SCAN_MARGIN_MM))) {
+			gmem_add(&g, path, (best * s) / 1000, (best * c) / 1000, k);
+		}
+		path += 11;				/* 60 mm/s x 180 ms */
+		pred = gmem_ahead(&g, path, k);
+		if ((pred != GMEM_NONE) && (pred < SCAN_STOP_DIST_MM)) {
+			return start_ahead_mm - path;
+		}
+		if ((start_ahead_mm - path) < -300) {
+			break;
+		}
+	}
+	return -999;
 }
 
 EXPORT void subsystem5_test(void)
@@ -96,7 +145,9 @@ EXPORT void subsystem5_test(void)
 	/* S5-U05: fault table 5.1 responses */
 	TEST_CHECK("S5-U05",
 		   (ctrl_on_faults(VS_READY, FLT_STALL) == VS_FAULT_STOP) &&
-		   (ctrl_on_faults(VS_LINE_FOLLOWING, FLT_IMPACT) == VS_STOPPED) &&
+		   (ctrl_on_faults(VS_LINE_FOLLOWING, FLT_LIFTED) == VS_STOPPED) &&
+		   (ctrl_on_faults(VS_OBSTACLE_BYPASS, FLT_LIFTED) == VS_STOPPED) &&
+		   (ctrl_on_faults(VS_INITIALISING, FLT_LIFTED) == VS_FAULT_STOP) &&
 		   (ctrl_on_faults(VS_LINE_FOLLOWING, FLT_LINE_LOST) == VS_STOPPED) &&
 		   (ctrl_on_faults(VS_OBSTACLE_BYPASS, FLT_LINE_LOST) == VS_OBSTACLE_BYPASS) &&
 		   (ctrl_on_faults(VS_LINE_FOLLOWING, FLT_WIFI) == VS_LINE_FOLLOWING),
@@ -151,6 +202,28 @@ EXPORT void subsystem5_test(void)
 		   (ctrl_plan_junction(BC_GO_STRAIGHT, 0, st) == 0) &&
 		   (ctrl_plan_junction(BC_UNRECOGNISED, 0, st) == 0),
 		   "junction U-TURN in place; FORWARD / unknown letter: straight on");
+
+	/* S5-U09 (13 Nov): the glance watch covers the whole car width.
+	   Objects straight ahead, half in front of the car, in front of a
+	   CORNER (10 cm off centre, car is +-8 cm) and at the edge of the
+	   margin stop about 20 cm away; one 20 cm to the side does not,
+	   and one stray echo does not stop the car. */
+	{
+		W	a0 = glance_drive(0, 700, FALSE);
+		W	a1 = glance_drive(60, 700, FALSE);
+		W	a2 = glance_drive(100, 700, FALSE);
+		W	a3 = glance_drive(-100, 700, FALSE);
+		W	a4 = glance_drive(130, 700, FALSE);
+		W	a5 = glance_drive(220, 700, FALSE);
+		W	a6 = glance_drive(-220, 700, TRUE);
+
+		tm_printf((UB*)"[TEST] S5 info: glance stops at %d / %d / %d / %d / %d mm (0, 6, 10 R, 10 L, 13 cm off); 22 cm off: %d; stray: %d\n",
+			  a0, a1, a2, a3, a4, a5, a6);
+		TEST_CHECK("S5-U09", (a0 >= 120) && (a0 <= 215) && (a1 >= 120) && (a1 <= 215) &&
+			   (a2 >= 120) && (a2 <= 215) && (a3 >= 120) && (a3 <= 215) &&
+			   (a4 >= 100) && (a4 <= 215) && (a5 == -999) && (a6 == -999),
+			   "glance: whole car width covered, off-path and stray echoes ignored");
+	}
 
 	TEST_SUMMARY("subsystem5");
 }

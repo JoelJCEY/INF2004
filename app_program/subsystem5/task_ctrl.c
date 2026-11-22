@@ -58,6 +58,8 @@ LOCAL BOOL		pass_active;	/* STEP_PASS running (31 Oct) */
 LOCAL UW		pass_seq0;
 LOCAL INT		wait_seq = -1;
 LOCAL BOOL		search_active;
+LOCAL UB		search_centre_ticks;
+LOCAL UW		search_centre_stamp;
 
 LOCAL INIT_PHASE	init_phase;
 LOCAL BYPASS_PHASE	bp_phase;
@@ -114,8 +116,167 @@ LOCAL const UW state_colour[VS_COUNT] = {
 	0x200010U	/* LINE RECOVERY (reserved) */
 };
 
+/* ---------------------------------------------------------------------
+ *  16 Nov: songs on the buzzer, chosen on the dashboard (Sounds panel,
+ *  WIRE_OP_SONG).  1 Twinkle Twinkle, 2 Ode to Joy, 3 "I Love You"
+ *  (Barney; the traditional tune "This Old Man"), 4 Race Day (original),
+ *  5 In the Hall of the Mountain King (Grieg), 6 Drop (original EDM).
+ *  0 = stop.  Played one
+ *  note at a time from the periodic part of the loop (50 ms tick), so
+ *  driving is not slowed.  Any status beep stops the song.
+ * --------------------------------------------------------------------- */
+#define N_C	1047U
+#define N_D	1175U
+#define N_E	1319U
+#define N_F	1397U
+#define N_G	1568U
+#define N_A	1760U
+#define N_B	1976U
+#define N_C6	2093U
+#define N_R	0U		/* rest */
+#define N_B5	988U
+#define N_CS	1109U		/* C sharp */
+#define N_FS	1480U		/* F sharp */
+#define N_GS	1661U
+#define N_AS	1865U
+#define N_D6	2349U
+#define N_E6	2637U
+#define N_FS6	2960U
+#define N_LOW	440U		/* "wub": as low as the piezo still sounds */
+#define NOTE_GAP_MS	50U	/* short silence so repeated notes are heard */
+
+typedef struct { UH hz; UH ms; } SONG_NOTE;
+
+LOCAL const SONG_NOTE song_twinkle[] = {
+	{N_C,350},{N_C,350},{N_G,350},{N_G,350},{N_A,350},{N_A,350},{N_G,700},
+	{N_F,350},{N_F,350},{N_E,350},{N_E,350},{N_D,350},{N_D,350},{N_C,700},
+	{N_G,350},{N_G,350},{N_F,350},{N_F,350},{N_E,350},{N_E,350},{N_D,700},
+	{N_G,350},{N_G,350},{N_F,350},{N_F,350},{N_E,350},{N_E,350},{N_D,700},
+	{N_C,350},{N_C,350},{N_G,350},{N_G,350},{N_A,350},{N_A,350},{N_G,700},
+	{N_F,350},{N_F,350},{N_E,350},{N_E,350},{N_D,350},{N_D,350},{N_C,700}
+};
+LOCAL const SONG_NOTE song_ode[] = {
+	{N_E,400},{N_E,400},{N_F,400},{N_G,400},{N_G,400},{N_F,400},{N_E,400},{N_D,400},
+	{N_C,400},{N_C,400},{N_D,400},{N_E,400},{N_E,600},{N_D,200},{N_D,800},
+	{N_E,400},{N_E,400},{N_F,400},{N_G,400},{N_G,400},{N_F,400},{N_E,400},{N_D,400},
+	{N_C,400},{N_C,400},{N_D,400},{N_E,400},{N_D,600},{N_C,200},{N_C,800}
+};
+LOCAL const SONG_NOTE song_barney[] = {
+	{N_G,400},{N_E,400},{N_G,800}, {N_G,400},{N_E,400},{N_G,800},
+	{N_A,200},{N_G,200},{N_F,200},{N_E,200},{N_D,200},{N_E,200},{N_F,800},
+	{N_E,200},{N_F,200},{N_G,400},{N_C,200},{N_C,400},
+	{N_C,200},{N_C,200},{N_D,200},{N_E,200},{N_F,200},{N_G,200},{N_G,400},
+	{N_G,200},{N_D,200},{N_D,200},{N_F,200},{N_E,200},{N_D,200},{N_C,800}
+};
+/* 4: "Race Day", an original jingle written for IS11: an engine rev
+   up the scale, then a short victory fanfare. */
+LOCAL const SONG_NOTE song_race[] = {
+	{N_C,100},{N_D,100},{N_E,100},{N_F,100},{N_G,100},{N_A,100},{N_B,100},{N_C6,300},
+	{N_R,200},
+	{N_G,200},{N_G,200},{N_C6,400},{N_A,200},{N_C6,600},
+	{N_R,200},
+	{N_E,200},{N_F,200},{N_G,400},{N_E,200},{N_G,200},{N_C6,900}
+};
+/* 5: In the Hall of the Mountain King (Grieg, 1875; public domain).
+   The main theme four times, faster each time, like the original. */
+LOCAL const SONG_NOTE song_mountain[] = {
+	{N_B5,300},{N_CS,300},{N_D,300},{N_E,300},{N_FS,300},{N_D,300},{N_FS,600},
+	{N_F,300},{N_CS,300},{N_F,600},  {N_E,300},{N_C,300},{N_E,600},
+	{N_B5,300},{N_CS,300},{N_D,300},{N_E,300},{N_FS,300},{N_D,300},{N_FS,300},{N_B,300},
+	{N_A,300},{N_FS,300},{N_D,300},{N_FS,300},{N_A,900},
+	{N_B5,200},{N_CS,200},{N_D,200},{N_E,200},{N_FS,200},{N_D,200},{N_FS,400},
+	{N_F,200},{N_CS,200},{N_F,400},  {N_E,200},{N_C,200},{N_E,400},
+	{N_B5,200},{N_CS,200},{N_D,200},{N_E,200},{N_FS,200},{N_D,200},{N_FS,200},{N_B,200},
+	{N_A,200},{N_FS,200},{N_D,200},{N_FS,200},{N_A,600},
+	{N_B5,150},{N_CS,150},{N_D,150},{N_E,150},{N_FS,150},{N_D,150},{N_FS,300},
+	{N_F,150},{N_CS,150},{N_F,300},  {N_E,150},{N_C,150},{N_E,300},
+	{N_B5,150},{N_CS,150},{N_D,150},{N_E,150},{N_FS,150},{N_D,150},{N_FS,150},{N_B,150},
+	{N_A,150},{N_FS,150},{N_D,150},{N_FS,150},{N_A,450},
+	{N_B5,100},{N_CS,100},{N_D,100},{N_E,100},{N_FS,100},{N_D,100},{N_FS,200},
+	{N_F,100},{N_CS,100},{N_F,200},  {N_E,100},{N_C,100},{N_E,200},
+	{N_B5,100},{N_CS,100},{N_D,100},{N_E,100},{N_FS,100},{N_D,100},{N_FS,100},{N_B,100},
+	{N_A,100},{N_FS,100},{N_D,100},{N_FS,100},{N_A,300},
+	{N_B,800}
+};
+/* 6: "Drop", an original EDM-style piece for IS11: pulses that speed up
+   and climb, a sweep, a pause, then a throbbing low "wub" with a high
+   hook on top. */
+#define WUB	{N_LOW,100},{N_R,100}
+LOCAL const SONG_NOTE song_drop[] = {
+	/* build-up */
+	{N_G,150},{N_R,50},{N_G,150},{N_R,50},{N_G,150},{N_R,50},{N_G,150},{N_R,50},
+	{N_A,100},{N_R,50},{N_A,100},{N_R,50},{N_A,100},{N_R,50},{N_A,100},{N_R,50},
+	{N_B,50},{N_R,50},{N_B,50},{N_R,50},{N_B,50},{N_R,50},{N_B,50},{N_R,50},
+	{N_C,50},{N_D,50},{N_E,50},{N_FS,50},{N_GS,50},{N_AS,50},{N_C6,50},{N_D6,50},{N_E6,50},{N_FS6,100},
+	{N_R,450},
+	/* drop */
+	WUB, WUB, {N_E6,200}, WUB, {N_D6,200},
+	WUB, WUB, {N_C6,200}, WUB, {N_A,200},
+	WUB, WUB, {N_E6,200}, WUB, {N_FS6,200},
+	WUB, WUB, {N_D6,100},{N_C6,100},{N_A,200}, WUB,
+	WUB, WUB, {N_E6,200}, WUB, {N_D6,200},
+	WUB, WUB, {N_C6,200}, WUB, {N_E6,200},
+	{N_R,100}, {N_C6,150},{N_E6,150},{N_FS6,600}
+};
+#define NOTES(a)	(sizeof(a) / sizeof(a[0]))
+
+LOCAL const SONG_NOTE	*song_p;
+LOCAL UINT		song_n;
+LOCAL UINT		song_i;
+LOCAL UW		song_next_at;
+LOCAL UW		song_seen;		/* last app_song_req handled */
+
+LOCAL void song_stop(void)
+{
+	song_p = NULL;
+	song_n = 0;
+	song_i = 0;
+}
+
+LOCAL void song_play(UW id)
+{
+	song_stop();
+	switch (id) {
+	case 1U: song_p = song_twinkle; song_n = NOTES(song_twinkle); break;
+	case 2U: song_p = song_ode;     song_n = NOTES(song_ode);     break;
+	case 3U: song_p = song_barney;  song_n = NOTES(song_barney);  break;
+	case 4U: song_p = song_race;    song_n = NOTES(song_race);    break;
+	case 5U: song_p = song_mountain; song_n = NOTES(song_mountain); break;
+	case 6U: song_p = song_drop;    song_n = NOTES(song_drop);    break;
+	default: drv_buzzer_tone(0); buzz_off_at = 0; break;
+	}
+	song_next_at = app_time_ms();
+}
+
+LOCAL void song_step(UW now)
+{
+	UW	req = app_song_req;
+
+	if (req != song_seen) {			/* new request from the dashboard */
+		song_seen = req;
+		app_log((UB*)"ctrl: song %d %s\n", (INT)(req & 0xFFU),
+			((req & 0xFFU) == 0U) ? "(stop)" : "playing");
+		song_play(req & 0xFFU);
+	}
+	if ((song_p != NULL) && (song_i < song_n) && ((W)(now - song_next_at) >= 0)) {
+		const SONG_NOTE *n = &song_p[song_i++];
+
+		drv_buzzer_tone(n->hz);
+		/* short notes (the rev) run together, longer ones get a gap */
+		buzz_off_at = now + (UW)n->ms - ((n->ms > 100U) ? NOTE_GAP_MS : 0U);
+		if (buzz_off_at == 0U) {
+			buzz_off_at = 1U;
+		}
+		song_next_at = now + n->ms;
+		if (song_i >= song_n) {
+			song_p = NULL;
+		}
+	}
+}
+
 LOCAL void beep(UW hz, UW ms)
 {
+	song_stop();			/* a status beep stops the song */
 	drv_buzzer_tone(hz);
 	buzz_off_at = app_time_ms() + ms;
 	if (buzz_off_at == 0U) {
@@ -133,6 +294,8 @@ LOCAL void post_step(void)
 	const CTRL_STEP	*s;
 
 	search_active = FALSE;
+	search_centre_ticks = 0;
+	search_centre_stamp = 0xFFFFFFFFU;
 	pass_active = FALSE;
 	scan_pass_watch = 0;
 	if (step_i >= nsteps) {
@@ -320,6 +483,35 @@ LOCAL void steps_done(void)
 	}
 }
 
+LOCAL void update_line_search(UW now)
+{
+	if (search_active) {
+		BOOL found;
+		UW lw = line_latest;
+		found = ((line_unpack_flags(lw) & LINE_F_ON_LINE) != 0U);
+		if (steps[step_i].op == STEP_SEARCH_TURN) {
+			if (ctrl_turn_centred(lw, now, line_norm[1])) {
+				if ((lw & 0xFFFFU) != search_centre_stamp) {
+					search_centre_stamp = lw & 0xFFFFU;
+					if (search_centre_ticks < 2U) search_centre_ticks++;
+				}
+			} else {
+				search_centre_ticks = 0;
+				search_centre_stamp = 0xFFFFFFFFU;
+			}
+			found = (search_centre_ticks >= 2U);
+		}
+		if (found) {
+			/* line found: stop this leg, then re-align */
+			search_active = FALSE;
+			if (mission.state == VS_INITIALISING) {
+				step_i = nsteps - 1;	/* skip the rest of the search */
+			}
+			wait_seq = stop();
+		}
+	}
+}
+
 /* ---------------------------------------------------------------------
  *  Event handlers
  * --------------------------------------------------------------------- */
@@ -499,7 +691,10 @@ LOCAL void on_terrain(const TERRAIN_MSG *m)
 			enter(VS_LINE_FOLLOWING);
 		}
 		break;
-	default:		/* TR_IMPACT arrives as FLT_IMPACT */
+	case TR_LIFTED:		/* the stop itself arrives as FLT_LIFTED */
+		app_log((UB*)"ctrl: car lifted / overturned: motors stopped (end of run)\n");
+		break;
+	default:
 		break;
 	}
 }
@@ -530,7 +725,7 @@ LOCAL void on_cross_junction(const NAV_MSG *m)
 		app_log((UB*)"ctrl: cross-junction, no barcode stored: straight on\n");
 		return;
 	}
-	if (mission.state != VS_LINE_FOLLOWING) {
+	if (!ctrl_junction_can_act((VEHICLE_STATE)mission.state)) {
 		app_log((UB*)"ctrl: cross-junction in state %d: barcode '%c' kept for the next one\n",
 			mission.state, (INT)pending_letter);
 		return;
@@ -728,7 +923,6 @@ EXPORT void ctrl_task(INT stacd, void *exinf)
 	UW		now;
 	UW		last_tlm = 0;
 	UW		last_btn = 0;
-	UW		lw;
 
 	(void)stacd; (void)exinf;
 
@@ -797,17 +991,7 @@ EXPORT void ctrl_task(INT stacd, void *exinf)
 			app_log((UB*)"ctrl: barcode TEST mode on: stopping\n");
 			enter(VS_STOPPED);
 		}
-		if (search_active) {
-			lw = line_latest;
-			if ((line_unpack_flags(lw) & LINE_F_ON_LINE) != 0U) {
-				/* line found: stop this leg, then re-align */
-				search_active = FALSE;
-				if (mission.state == VS_INITIALISING) {
-					step_i = nsteps - 1;	/* skip the rest of the search */
-				}
-				wait_seq = stop();
-			}
-		}
+		update_line_search(now);
 		if ((now - last_tlm) >= TLM_PERIOD_MS) {
 			last_tlm = now;
 			send_telemetry();
@@ -816,5 +1000,6 @@ EXPORT void ctrl_task(INT stacd, void *exinf)
 			buzz_off_at = 0;
 			drv_buzzer_tone(0);
 		}
+		song_step(now);
 	}
 }

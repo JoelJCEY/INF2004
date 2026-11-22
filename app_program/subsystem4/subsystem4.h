@@ -28,7 +28,7 @@ typedef enum {
 	ME_TURNING	= 3,
 	ME_CLIMBING	= 4,
 	ME_DESCENDING	= 5,
-	ME_IMPACT	= 6
+	ME_LIFTED	= 6	/* 13 Nov: lifted or overturned (was impact) */
 } MOTION_EVENT_CLASS;
 
 /* ---------------------------------------------------------------------
@@ -39,7 +39,8 @@ typedef enum {
 typedef enum {
 	TR_HUMP_START	= 1,	/* front wheels started climbing         */
 	TR_HUMP_END	= 2,	/* rear wheels crossed: peak_01mm valid  */
-	TR_IMPACT	= 3,	/* also sets FLT_IMPACT                  */
+	TR_LIFTED	= 3,	/* 13 Nov: lifted / overturned, also sets
+				   FLT_LIFTED (was TR_IMPACT)            */
 	TR_HUMP_DISCARD	= 4	/* > 500 mm climb or false trigger       */
 } TERRAIN_KIND;
 
@@ -71,7 +72,20 @@ IMPORT volatile UW imu_status_word;
 IMPORT volatile W  imu_acc_raw[3];	/* mg                     */
 IMPORT volatile W  imu_mag_raw[3];	/* raw LSB                */
 IMPORT volatile W  imu_base_mg[2];	/* level baseline x, y    */
+IMPORT volatile W  imu_base_z_mg;	/* level baseline z       */
+IMPORT volatile W  imu_acc_filt[3];	/* filtered x, y, z (mg), dashboard */
 IMPORT volatile UW imu_reads_ok;
+/* 13 Nov: live lift / tilt values for the dashboard (writer imu_task;
+   separate aligned words, a mixed snapshot is harmless for display):
+     imu_tilt_cos1000  cos(angle from level) x 1000 (1000 level, 500 =
+                       60 deg = the stop limit, < 0 = upside down)
+     imu_up_mg         upward push above 1 g, 80 ms average (stop > 200)
+     imu_lift_now      0 none, 1 lifted, 2 overturned (this reading)
+     imu_lift_count    lift / overturn stops since boot */
+IMPORT volatile W  imu_tilt_cos1000;
+IMPORT volatile W  imu_up_mg;
+IMPORT volatile UW imu_lift_now;
+IMPORT volatile UW imu_lift_count;
 IMPORT volatile UW imu_reads_fail;
 
 /* ---------------------------------------------------------------------

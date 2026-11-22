@@ -41,6 +41,14 @@ IMPORT INT  line_normalise(const LINE_CAL *cal, UINT ch, INT raw);
 #define LINE_WHITE_N		250	/* ... white below (was 400)    */
 IMPORT INT  line_error(INT n_l, INT n_c, INT n_r, BOOL *on_line);
 
+/* Centre DO needs two consecutive samples to change state; right AO
+   uses hysteresis. Keep the barcode sensor out of steering. */
+typedef struct {
+	BOOL centre, right;
+	UB centre_ticks;
+} LINE_TRACK;
+IMPORT INT line_track_step(LINE_TRACK *s, INT n_c, INT n_r, BOOL *on_line);
+
 /* ---------------------------------------------------------------------
  *  Code 39 (design 6.3, VA2): 29 elements = '*' X '*' with two
  *  inter-character gaps.  Wide/narrow by relative width (~3:1), so the
@@ -81,6 +89,20 @@ IMPORT BARCODE_CMD line_letter_to_cmd(UB letter, UW map);
    UNDONE instead of adding two extra elements.  The real narrow bar is a
    few mm, so 0.5 mm cannot hide a real one. */
 #define BC_RECROSS_UM		500
+/* 13 Nov: IR_L moved from DO to AO.  An analogue sensor gives a smooth
+   ramp at each edge, and IR_L's own black level is not measured at
+   start-up (it never crosses the line in the sweep, so it borrows
+   another sensor's range).  Fixed thresholds then cut the ramps off
+   centre and make bars look wider and gaps narrower.  The reader now
+   follows the levels it actually sees: the recent black (peak) and
+   white (valley), fading over BC_LEVEL_DECAY_UM of travel, and switches
+   at the MIDDLE of the two with a small hysteresis.  Until it has seen
+   at least BC_ADAPT_MIN_RANGE of contrast it uses LINE_BLACK_N /
+   LINE_WHITE_N as before (start of each barcode after a long white). */
+#define BC_ADAPT		1
+#define BC_LEVEL_DECAY_UM	50000	/* levels fade over ~50 mm of travel */
+#define BC_ADAPT_MIN_RANGE	300	/* normalised units (0..1000)       */
+#define BC_ADAPT_HYST_MIN	50	/* hysteresis: max(range / 16, this) */
 typedef enum {
 	BCS_WAIT_GAP	= 0,	/* WAITING FOR BARCODE (needs quiet zone) */
 	BCS_ARMED	= 1,	/* quiet zone seen, waiting for a bar     */
@@ -115,6 +137,8 @@ typedef struct {
 	UW		bars;		/* black lines crossed (undone
 					   re-crossings removed)        */
 	UW		recross;	/* edges undone (debounced)     */
+	W		lvl_hi16;	/* 13 Nov: recent black level x16 */
+	W		lvl_lo16;	/* ...and white level x16         */
 } BC_READER;
 
 /* ---------------------------------------------------------------------
@@ -164,9 +188,20 @@ IMPORT BC_RESULT bc_reader_feed(BC_READER *r, INT n_r, W um,
  *  DESIGN VALUES: check on the real mat (testing/subsystem3, S3-M05).
  * --------------------------------------------------------------------- */
 #define CROSS_MIN_UM		8000U	/* narrower: noise / thin bar    */
-#define CROSS_MAX_UM		60000U	/* wider: the main line under IR_L */
+#define CROSS_MAX_UM		90000U	/* wider: main line (16 Nov: 60->90 mm, skewed approach) */
 #define CROSS_QUIET_UM		12000U	/* = BC_QUIET_MIN_UM            */
-#define CROSS_SLACK_UM		40000U	/* sensors not exactly in a row  */
+#define CROSS_SLACK_UM		70000U	/* sensors not exactly in a row (16 Nov: 40->70 mm) */
+/* 16 Nov: C and R black together = maybe a crossing line arriving at an
+   angle (R first).  Hold the heading this far so the car does not turn
+   into the right arm before IR_L reaches the stripe. */
+#define CROSS_EARLY_HOLD_MM	45U
+#define CROSS_EARLY_GAP_MM	150U	/* no new early hold this soon after one */
+/* reasons a crossing candidate was dropped (CROSS_DET.reject) */
+#define CXR_NONE	0U
+#define CXR_NARROW	1U
+#define CXR_WIDE	2U
+#define CXR_BAR_AFTER	3U
+#define CXR_NO_CR	4U
 
 typedef enum {
 	CXS_IDLE	= 0,	/* waiting for white before a stripe */
@@ -183,6 +218,8 @@ typedef struct {
 	UW		since_r_um;	/* distance since IR_R was black */
 	BOOL		c_seen;
 	BOOL		r_seen;
+	UB		reject;		/* 16 Nov: CXR_* of the last drop */
+	UW		reject_um;	/* stripe width at that drop     */
 } CROSS_DET;
 
 IMPORT void cross_reset(CROSS_DET *d);
@@ -191,5 +228,8 @@ IMPORT void cross_feed_cr(CROSS_DET *d, UINT ch, INT n, UW um);
 /* IR_L sample.  TRUE once per cross-junction; *back_um = distance from
    the middle of the crossing line to the sensor row right now. */
 IMPORT BOOL cross_feed_l(CROSS_DET *d, INT n_l, UW um, UW *back_um);
+/* Hold heading as soon as the candidate stripe has evidence from C and
+   R, including a skewed approach. Navigation still waits for confirmation. */
+IMPORT BOOL cross_hold_heading(const CROSS_DET *d);
 
 #endif /* LINE_SENSE_H */

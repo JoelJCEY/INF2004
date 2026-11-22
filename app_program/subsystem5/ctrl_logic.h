@@ -12,6 +12,9 @@
 
 /* Is the state an "active manoeuvre" one (STOP / impact apply)? */
 IMPORT BOOL ctrl_is_active(VEHICLE_STATE s);
+IMPORT BOOL ctrl_junction_can_act(VEHICLE_STATE s);
+/* A turn search must land on the centre, not stop at the right sensor. */
+IMPORT BOOL ctrl_turn_centred(UW line_word, UW now_ms, UW centre_norm);
 /* Next state for a START / STOP / RESET in state s, or s if rejected. */
 IMPORT VEHICLE_STATE ctrl_on_command(VEHICLE_STATE s, REMOTE_CMD c);
 /* Next state for newly reported faults (FLT_xxx) in state s. */
