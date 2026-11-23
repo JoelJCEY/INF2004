@@ -24,3 +24,6 @@ config/wifi_secrets.h
 
 # macOS
 .DS_Store
+
+# host test traces (tools/host_test/run.sh)
+tools/host_test/sim*.txt

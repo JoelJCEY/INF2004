@@ -9,7 +9,8 @@
 
 #include "subsystem5.h"
 
-#define SERVO_US_0DEG		500	/* pulse at 0° (check the servo's datasheet) */
+/* pulse at 0° (check the servo's datasheet) */
+#define SERVO_US_0DEG		500
 #define SERVO_US_180DEG		2500	/* pulse at 180° */
 #define SERVO_SETTLE_MS		80	/* per 5-15° step before a ping */
 /* 31 Oct: gentle moves.  The pulse is changed 1° at a time with a pause

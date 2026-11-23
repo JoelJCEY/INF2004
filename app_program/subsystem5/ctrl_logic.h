@@ -27,9 +27,11 @@ typedef enum {
 	STEP_TURN	= 1,	/* arg: signed degrees, + = left            */
 	STEP_MOVE	= 2,	/* arg: signed mm                           */
 	STEP_SEARCH	= 3,	/* arg: mm; ends early when the line is seen */
-	STEP_SEARCH_TURN = 4,	/* arg: signed degrees; ends early on the line */
-	STEP_PASS	= 5	/* arg: max mm forward; ends early when scan_task
-				   reports the obstacle is behind (31 Oct)   */
+	/* arg: signed degrees; ends early on the line */
+	STEP_SEARCH_TURN = 4,
+	/* arg: max mm forward; ends early when scan_task reports the obstacle
+	   is behind (31 Oct) */
+	STEP_PASS	= 5
 } STEP_OP;
 
 typedef struct {
@@ -42,8 +44,10 @@ typedef struct {
 #define CTRL_REVERSE_MM		100	/* before a rescan               */
 #define CTRL_BYPASS_MM_S	80	/* 4 Nov: straight bypass legs (reverse,
 					   sideways, pass).  Turns and the line
-					   search stay at the normal 40 mm/s: the
-					   turn calibration was measured there and
+					   search stay at the normal 40 mm/s:
+					   the
+					   turn calibration was measured there
+					   and
 					   the search must stop on the line   */
 #define CTRL_SENSOR_AHEAD_MM	70	/* IR sensors ahead of the wheel axle
 					   (31 Oct estimate: measure the car;

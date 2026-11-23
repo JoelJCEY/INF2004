@@ -49,7 +49,8 @@ LOCAL BOOL side_blocked(const SCAN_SWEEP *s, INT lo, INT hi, BOOL right,
 
 	for (i = 0; i < SCAN_POSITIONS; i++) {
 		if (((i >= lo) && (i <= hi)) || !measured(s, i) ||
-		    (s->dist[i] >= SCAN_RANGE_MM)) {	/* far = floor / background */
+		    /* far = floor / background */
+		    (s->dist[i] >= SCAN_RANGE_MM)) {
 			continue;
 		}
 		d = s->dist[i];
@@ -58,7 +59,7 @@ LOCAL BOOL side_blocked(const SCAN_SWEEP *s, INT lo, INT hi, BOOL right,
 		if ((right && (x <= 0)) || (!right && (x >= 0))) {
 			continue;
 		}
-		if ((APP_ABS(x) < (need_mm + SCAN_CAR_HALF_W_MM)) &&
+		if ((app_abs(x) < (need_mm + SCAN_CAR_HALF_W_MM)) &&
 		    (y < (closest + SCAN_OBST_DEPTH_MM + SCAN_CAR_LEN_MM))) {
 			return TRUE;
 		}
@@ -66,49 +67,93 @@ LOCAL BOOL side_blocked(const SCAN_SWEEP *s, INT lo, INT hi, BOOL right,
 	return FALSE;
 }
 
+/* Seed: the closest point in the car's own path (the one that raised
+   the alert); a wall off to the side is not the obstacle.  Returns its
+   index, or -1; *closest = its distance. */
+LOCAL INT scan_seed(const SCAN_SWEEP *s, W *closest)
+{
+	INT	i, ci = -1;
+
+	*closest = 0x7FFF;
+	for (i = 0; i < SCAN_POSITIONS; i++) {
+		W x;
+
+		if (!measured(s, i) || (s->dist[i] >= *closest)) {
+			continue;
+		}
+		x = app_abs(((W)s->dist[i] * scan_cos1000((UINT)i)) / 1000);
+		if (x <= (SCAN_CAR_HALF_W_MM + SCAN_MARGIN_MM)) {
+			*closest = s->dist[i];
+			ci = i;
+		}
+	}
+	return ci;
+}
+
+/* Grow the obstacle from the closest point while neighbours are within
+   the band (unmeasured positions are skipped over) */
+LOCAL void scan_grow(const SCAN_SWEEP *s, INT ci, W closest,
+		     INT *lo_out, INT *hi_out)
+{
+	INT	i, lo = ci, hi = ci;
+
+	for (i = ci - 1; i >= 0; i--) {
+		if (!measured(s, i)) {
+			continue;
+		}
+		if ((W)s->dist[i] > closest + SCAN_OBST_BAND_MM) {
+			break;
+		}
+		lo = i;
+	}
+	for (i = ci + 1; i < SCAN_POSITIONS; i++) {
+		if (!measured(s, i)) {
+			continue;
+		}
+		if ((W)s->dist[i] > closest + SCAN_OBST_BAND_MM) {
+			break;
+		}
+		hi = i;
+	}
+	*lo_out = lo;
+	*hi_out = hi;
+}
+
+/* 4 Nov (team): always go LEFT unless the left is blocked (31 Oct it
+   was right first) */
+LOCAL void scan_choose_side(SCAN_RESULT *r, BOOL blk_l, W need_l,
+			    BOOL blk_r, W need_r)
+{
+	r->kind = OB_PROFILE;
+	if (!blk_l) {
+		r->side = (UB)OBS_SIDE_LEFT;
+		r->offset_mm = (UH)need_l;
+	} else if (!blk_r) {
+		r->side = (UB)OBS_SIDE_RIGHT;
+		r->offset_mm = (UH)need_r;
+	} else {
+		r->kind = OB_NO_CLEARANCE;
+		r->side = (UB)OBS_SIDE_NONE;
+		r->offset_mm = 0;
+	}
+}
+
 EXPORT ER scan_profile(const SCAN_SWEEP *s, SCAN_RESULT *r)
 {
-	INT	i, ci = -1, lo, hi;
-	W	closest = 0x7FFF;
+	INT	ci, lo, hi;
+	W	closest;
 	W	x_lo, y_lo, x_hi, y_hi, dx, dy;
 	W	need_r, need_l;
 	BOOL	blk_r, blk_l;
 
-	/* Seed: the closest point in the car's own path (the one that
-	   raised the alert); a wall off to the side is not the obstacle */
-	for (i = 0; i < SCAN_POSITIONS; i++) {
-		W x;
-
-		if (!measured(s, i) || (s->dist[i] >= closest)) {
-			continue;
-		}
-		x = APP_ABS(((W)s->dist[i] * scan_cos1000((UINT)i)) / 1000);
-		if (x <= (SCAN_CAR_HALF_W_MM + SCAN_MARGIN_MM)) {
-			closest = s->dist[i];
-			ci = i;
-		}
-	}
+	ci = scan_seed(s, &closest);
 	/* Nothing in the car's own path: no obstacle to go around, even if
 	   something stands off to the side (28 Oct: a wall or the car's own
 	   bracket at the sweep ends started a bypass of nothing) */
 	if ((ci < 0) || (closest >= SCAN_RANGE_MM)) {
 		return E_OBJ;		/* nothing in range: no obstacle */
 	}
-
-	/* Grow the obstacle from the closest point while neighbours are
-	   within the band (unmeasured positions are skipped over) */
-	lo = ci;
-	for (i = ci - 1; i >= 0; i--) {
-		if (!measured(s, i)) continue;
-		if ((W)s->dist[i] > closest + SCAN_OBST_BAND_MM) break;
-		lo = i;
-	}
-	hi = ci;
-	for (i = ci + 1; i < SCAN_POSITIONS; i++) {
-		if (!measured(s, i)) continue;
-		if ((W)s->dist[i] > closest + SCAN_OBST_BAND_MM) break;
-		hi = i;
-	}
+	scan_grow(s, ci, closest, &lo, &hi);
 
 	x_lo = ((W)s->dist[lo] * scan_cos1000((UINT)lo)) / 1000;
 	y_lo = ((W)s->dist[lo] * scan_sin1000((UINT)lo)) / 1000;
@@ -126,16 +171,17 @@ EXPORT ER scan_profile(const SCAN_SWEEP *s, SCAN_RESULT *r)
 	   the car's rear still beside the obstacle (30 Oct video), and the
 	   turn back in clipped it.  Distance reversed is added by ctrl. */
 	r->depth_mm = (UH)(closest +
-			   APP_CLAMP((W)r->width_mm, SCAN_DEPTH_MIN_MM, SCAN_DEPTH_MAX_MM) +
+			   app_clamp((W)r->width_mm, SCAN_DEPTH_MIN_MM,
+				     SCAN_DEPTH_MAX_MM) +
 			   SCAN_CAR_LEN_MM);
 
 	/* Lateral move to clear each edge (FR4: keep the detour short) */
 	need_r = ((x_lo > x_hi) ? x_lo : x_hi);		/* right-most edge */
 	need_l = -((x_lo < x_hi) ? x_lo : x_hi);	/* left-most edge  */
-	need_r = ((need_r > 0) ? need_r : 0) + SCAN_CAR_HALF_W_MM + SCAN_MARGIN_MM
-		 + SCAN_PASS_EXTRA_MM;
-	need_l = ((need_l > 0) ? need_l : 0) + SCAN_CAR_HALF_W_MM + SCAN_MARGIN_MM
-		 + SCAN_PASS_EXTRA_MM;
+	need_r = ((need_r > 0) ? need_r : 0) + SCAN_CAR_HALF_W_MM +
+		 SCAN_MARGIN_MM + SCAN_PASS_EXTRA_MM;
+	need_l = ((need_l > 0) ? need_l : 0) + SCAN_CAR_HALF_W_MM +
+		 SCAN_MARGIN_MM + SCAN_PASS_EXTRA_MM;
 	/* The narrow sweep may end before the obstacle does: an edge that
 	   touches the sweep limit is not the real edge, so keep extra room */
 	if (lo <= SCAN_IDX_MIN) {
@@ -147,21 +193,7 @@ EXPORT ER scan_profile(const SCAN_SWEEP *s, SCAN_RESULT *r)
 
 	blk_r = side_blocked(s, lo, hi, TRUE, need_r, closest);
 	blk_l = side_blocked(s, lo, hi, FALSE, need_l, closest);
-
-	r->kind = OB_PROFILE;
-	/* 4 Nov (team): always go LEFT unless the left is blocked
-	   (31 Oct it was right first) */
-	if (!blk_l) {
-		r->side = (UB)OBS_SIDE_LEFT;
-		r->offset_mm = (UH)need_l;
-	} else if (!blk_r) {
-		r->side = (UB)OBS_SIDE_RIGHT;
-		r->offset_mm = (UH)need_r;
-	} else {
-		r->kind = OB_NO_CLEARANCE;
-		r->side = (UB)OBS_SIDE_NONE;
-		r->offset_mm = 0;
-	}
+	scan_choose_side(r, blk_l, need_l, blk_r, need_r);
 	return E_OK;
 }
 
@@ -181,7 +213,8 @@ EXPORT void gmem_clear(GLANCE_MEM *g)
 	g->obj_at = GMEM_NONE;
 }
 
-EXPORT void gmem_add(GLANCE_MEM *g, W path_mm, W ahead_mm, W side_mm, UW glance_no)
+EXPORT void gmem_add(GLANCE_MEM *g, W path_mm, W ahead_mm, W side_mm,
+	UW glance_no)
 {
 	INT	i;
 	W	at = path_mm + ahead_mm;
@@ -189,8 +222,8 @@ EXPORT void gmem_add(GLANCE_MEM *g, W path_mm, W ahead_mm, W side_mm, UW glance_
 
 	for (i = 0; i < GMEM_N; i++) {
 		if ((g->used[i] != 0U) &&
-		    (APP_ABS(g->at[i] - at) <= GMEM_MATCH_MM) &&
-		    (APP_ABS(g->side[i] - side_mm) <= GMEM_MATCH_MM)) {
+		    (app_abs(g->at[i] - at) <= GMEM_MATCH_MM) &&
+		    (app_abs(g->side[i] - side_mm) <= GMEM_MATCH_MM)) {
 			/* seen twice: a real object; keep its nearest edge */
 			near_at = (g->at[i] < at) ? g->at[i] : at;
 			if ((g->obj_at == GMEM_NONE) || (near_at < g->obj_at)) {
@@ -211,11 +244,13 @@ EXPORT W gmem_ahead(GLANCE_MEM *g, W path_mm, UW glance_no)
 
 	for (i = 0; i < GMEM_N; i++) {
 		if ((g->used[i] != 0U) &&
-		    (((glance_no - g->when[i]) > GMEM_KEEP_GLANCES) || (g->at[i] < path_mm))) {
+		    (((glance_no - g->when[i]) > GMEM_KEEP_GLANCES) ||
+		    	(g->at[i] < path_mm))) {
 			g->used[i] = 0U;
 		}
 	}
-	if ((g->obj_at != GMEM_NONE) && (g->obj_at < (path_mm - SCAN_CAR_LEN_MM))) {
+	if ((g->obj_at != GMEM_NONE) &&
+		(g->obj_at < (path_mm - SCAN_CAR_LEN_MM))) {
 		g->obj_at = GMEM_NONE;		/* long behind us */
 	}
 	return (g->obj_at == GMEM_NONE) ? GMEM_NONE : (g->obj_at - path_mm);
@@ -226,5 +261,6 @@ EXPORT W gmem_ahead(GLANCE_MEM *g, W path_mm, UW glance_no)
    glance memory already saw twice) */
 EXPORT BOOL scan_confirm_run(INT best_run, BOOL touches_end)
 {
-	return ((best_run >= SCAN_CONFIRM_HITS) || ((best_run >= 1) && touches_end)) ? TRUE : FALSE;
+	return ((best_run >= SCAN_CONFIRM_HITS) ||
+		((best_run >= 1) && touches_end)) ? TRUE : FALSE;
 }

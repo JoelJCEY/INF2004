@@ -31,33 +31,33 @@ LOCAL INT post(MOTION_OP op, UH speed_mm_s, W arg)
 
 EXPORT INT moveForward(W distance_mm)
 {
-	return post(MC_MOVE, 0, APP_ABS(distance_mm));
+	return post(MC_MOVE, 0, app_abs(distance_mm));
 }
 
 /* 4 Nov: the same moves at a chosen speed (bypass legs) */
 EXPORT INT moveForwardAt(W distance_mm, UH speed_mm_s)
 {
-	return post(MC_MOVE, speed_mm_s, APP_ABS(distance_mm));
+	return post(MC_MOVE, speed_mm_s, app_abs(distance_mm));
 }
 
 EXPORT INT moveBackwardAt(W distance_mm, UH speed_mm_s)
 {
-	return post(MC_MOVE, speed_mm_s, -APP_ABS(distance_mm));
+	return post(MC_MOVE, speed_mm_s, -app_abs(distance_mm));
 }
 
 EXPORT INT moveBackward(W distance_mm)
 {
-	return post(MC_MOVE, 0, -APP_ABS(distance_mm));
+	return post(MC_MOVE, 0, -app_abs(distance_mm));
 }
 
 EXPORT INT turnLeft(W angle_deg)
 {
-	return post(MC_TURN, 0, APP_ABS(angle_deg) * 10);
+	return post(MC_TURN, 0, app_abs(angle_deg) * 10);
 }
 
 EXPORT INT turnRight(W angle_deg)
 {
-	return post(MC_TURN, 0, -APP_ABS(angle_deg) * 10);
+	return post(MC_TURN, 0, -app_abs(angle_deg) * 10);
 }
 
 EXPORT INT stop(void)

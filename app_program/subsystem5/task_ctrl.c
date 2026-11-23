@@ -28,7 +28,8 @@
 #define HUMP_SPEED_MM_S		40	/* speed limit while crossing a hump */
 #define INIT_SENSOR_TMO_MS	5000
 #define CAL_SWEEP_DEG		25	/* IR calibration sweep each way */
-#define ALIGN_SEARCH_DEG	35	/* after the sweep: look this far each way for the line */
+/* after the sweep: look this far each way for the line */
+#define ALIGN_SEARCH_DEG	35
 #define APP_CAL_SWEEP		1	/* 0: keep the default thresholds */
 #define BYPASS_TARGET_MS	5000	/* NFR2: < 5 s (target 3 s) */
 
@@ -37,7 +38,8 @@ typedef enum {
 	INIT_SELFTEST,
 	INIT_CAL_SWEEP,
 	INIT_CAL_APPLY,
-	INIT_ALIGN,		/* turn until the sensors are back on the line */
+	/* turn until the sensors are back on the line */
+	INIT_ALIGN,
 	INIT_DONE
 } INIT_PHASE;
 
@@ -156,9 +158,11 @@ LOCAL const SONG_NOTE song_twinkle[] = {
 	{N_F,350},{N_F,350},{N_E,350},{N_E,350},{N_D,350},{N_D,350},{N_C,700}
 };
 LOCAL const SONG_NOTE song_ode[] = {
-	{N_E,400},{N_E,400},{N_F,400},{N_G,400},{N_G,400},{N_F,400},{N_E,400},{N_D,400},
+	{N_E,400},{N_E,400},{N_F,400},{N_G,400},{N_G,400},{N_F,400},{N_E,400},
+	{N_D,400},
 	{N_C,400},{N_C,400},{N_D,400},{N_E,400},{N_E,600},{N_D,200},{N_D,800},
-	{N_E,400},{N_E,400},{N_F,400},{N_G,400},{N_G,400},{N_F,400},{N_E,400},{N_D,400},
+	{N_E,400},{N_E,400},{N_F,400},{N_G,400},{N_G,400},{N_F,400},{N_E,400},
+	{N_D,400},
 	{N_C,400},{N_C,400},{N_D,400},{N_E,400},{N_D,600},{N_C,200},{N_C,800}
 };
 LOCAL const SONG_NOTE song_barney[] = {
@@ -171,7 +175,8 @@ LOCAL const SONG_NOTE song_barney[] = {
 /* 4: "Race Day", an original jingle written for IS11: an engine rev
    up the scale, then a short victory fanfare. */
 LOCAL const SONG_NOTE song_race[] = {
-	{N_C,100},{N_D,100},{N_E,100},{N_F,100},{N_G,100},{N_A,100},{N_B,100},{N_C6,300},
+	{N_C,100},{N_D,100},{N_E,100},{N_F,100},{N_G,100},{N_A,100},{N_B,100},
+	{N_C6,300},
 	{N_R,200},
 	{N_G,200},{N_G,200},{N_C6,400},{N_A,200},{N_C6,600},
 	{N_R,200},
@@ -180,21 +185,29 @@ LOCAL const SONG_NOTE song_race[] = {
 /* 5: In the Hall of the Mountain King (Grieg, 1875; public domain).
    The main theme four times, faster each time, like the original. */
 LOCAL const SONG_NOTE song_mountain[] = {
-	{N_B5,300},{N_CS,300},{N_D,300},{N_E,300},{N_FS,300},{N_D,300},{N_FS,600},
+	{N_B5,300},{N_CS,300},{N_D,300},{N_E,300},{N_FS,300},{N_D,300},
+	{N_FS,600},
 	{N_F,300},{N_CS,300},{N_F,600},  {N_E,300},{N_C,300},{N_E,600},
-	{N_B5,300},{N_CS,300},{N_D,300},{N_E,300},{N_FS,300},{N_D,300},{N_FS,300},{N_B,300},
+	{N_B5,300},{N_CS,300},{N_D,300},{N_E,300},{N_FS,300},{N_D,300},
+	{N_FS,300},{N_B,300},
 	{N_A,300},{N_FS,300},{N_D,300},{N_FS,300},{N_A,900},
-	{N_B5,200},{N_CS,200},{N_D,200},{N_E,200},{N_FS,200},{N_D,200},{N_FS,400},
+	{N_B5,200},{N_CS,200},{N_D,200},{N_E,200},{N_FS,200},{N_D,200},
+	{N_FS,400},
 	{N_F,200},{N_CS,200},{N_F,400},  {N_E,200},{N_C,200},{N_E,400},
-	{N_B5,200},{N_CS,200},{N_D,200},{N_E,200},{N_FS,200},{N_D,200},{N_FS,200},{N_B,200},
+	{N_B5,200},{N_CS,200},{N_D,200},{N_E,200},{N_FS,200},{N_D,200},
+	{N_FS,200},{N_B,200},
 	{N_A,200},{N_FS,200},{N_D,200},{N_FS,200},{N_A,600},
-	{N_B5,150},{N_CS,150},{N_D,150},{N_E,150},{N_FS,150},{N_D,150},{N_FS,300},
+	{N_B5,150},{N_CS,150},{N_D,150},{N_E,150},{N_FS,150},{N_D,150},
+	{N_FS,300},
 	{N_F,150},{N_CS,150},{N_F,300},  {N_E,150},{N_C,150},{N_E,300},
-	{N_B5,150},{N_CS,150},{N_D,150},{N_E,150},{N_FS,150},{N_D,150},{N_FS,150},{N_B,150},
+	{N_B5,150},{N_CS,150},{N_D,150},{N_E,150},{N_FS,150},{N_D,150},
+	{N_FS,150},{N_B,150},
 	{N_A,150},{N_FS,150},{N_D,150},{N_FS,150},{N_A,450},
-	{N_B5,100},{N_CS,100},{N_D,100},{N_E,100},{N_FS,100},{N_D,100},{N_FS,200},
+	{N_B5,100},{N_CS,100},{N_D,100},{N_E,100},{N_FS,100},{N_D,100},
+	{N_FS,200},
 	{N_F,100},{N_CS,100},{N_F,200},  {N_E,100},{N_C,100},{N_E,200},
-	{N_B5,100},{N_CS,100},{N_D,100},{N_E,100},{N_FS,100},{N_D,100},{N_FS,100},{N_B,100},
+	{N_B5,100},{N_CS,100},{N_D,100},{N_E,100},{N_FS,100},{N_D,100},
+	{N_FS,100},{N_B,100},
 	{N_A,100},{N_FS,100},{N_D,100},{N_FS,100},{N_A,300},
 	{N_B,800}
 };
@@ -204,10 +217,13 @@ LOCAL const SONG_NOTE song_mountain[] = {
 #define WUB	{N_LOW,100},{N_R,100}
 LOCAL const SONG_NOTE song_drop[] = {
 	/* build-up */
-	{N_G,150},{N_R,50},{N_G,150},{N_R,50},{N_G,150},{N_R,50},{N_G,150},{N_R,50},
-	{N_A,100},{N_R,50},{N_A,100},{N_R,50},{N_A,100},{N_R,50},{N_A,100},{N_R,50},
+	{N_G,150},{N_R,50},{N_G,150},{N_R,50},{N_G,150},{N_R,50},{N_G,150},
+	{N_R,50},
+	{N_A,100},{N_R,50},{N_A,100},{N_R,50},{N_A,100},{N_R,50},{N_A,100},
+	{N_R,50},
 	{N_B,50},{N_R,50},{N_B,50},{N_R,50},{N_B,50},{N_R,50},{N_B,50},{N_R,50},
-	{N_C,50},{N_D,50},{N_E,50},{N_FS,50},{N_GS,50},{N_AS,50},{N_C6,50},{N_D6,50},{N_E6,50},{N_FS6,100},
+	{N_C,50},{N_D,50},{N_E,50},{N_FS,50},{N_GS,50},{N_AS,50},{N_C6,50},
+	{N_D6,50},{N_E6,50},{N_FS6,100},
 	{N_R,450},
 	/* drop */
 	WUB, WUB, {N_E6,200}, WUB, {N_D6,200},
@@ -218,7 +234,9 @@ LOCAL const SONG_NOTE song_drop[] = {
 	WUB, WUB, {N_C6,200}, WUB, {N_E6,200},
 	{N_R,100}, {N_C6,150},{N_E6,150},{N_FS6,600}
 };
-#define NOTES(a)	(sizeof(a) / sizeof(a[0]))
+/* Notes in a song array.  A macro: it needs the array type (sizeof),
+   which a function parameter would lose */
+#define NOTES(a)	(sizeof(a) / sizeof((a)[0]))
 
 LOCAL const SONG_NOTE	*song_p;
 LOCAL UINT		song_n;
@@ -252,18 +270,21 @@ LOCAL void song_step(UW now)
 {
 	UW	req = app_song_req;
 
-	if (req != song_seen) {			/* new request from the dashboard */
+	/* new request from the dashboard */
+	if (req != song_seen) {
 		song_seen = req;
 		app_log((UB*)"ctrl: song %d %s\n", (INT)(req & 0xFFU),
 			((req & 0xFFU) == 0U) ? "(stop)" : "playing");
 		song_play(req & 0xFFU);
 	}
-	if ((song_p != NULL) && (song_i < song_n) && ((W)(now - song_next_at) >= 0)) {
+	if ((song_p != NULL) && (song_i < song_n) &&
+		((W)(now - song_next_at) >= 0)) {
 		const SONG_NOTE *n = &song_p[song_i++];
 
 		drv_buzzer_tone(n->hz);
 		/* short notes (the rev) run together, longer ones get a gap */
-		buzz_off_at = now + (UW)n->ms - ((n->ms > 100U) ? NOTE_GAP_MS : 0U);
+		buzz_off_at = now + (UW)n->ms
+			- ((n->ms > 100U) ? NOTE_GAP_MS : 0U);
 		if (buzz_off_at == 0U) {
 			buzz_off_at = 1U;
 		}
@@ -311,12 +332,12 @@ LOCAL void post_step(void)
 		pass_active = TRUE;
 		wait_seq = moveForwardAt(s->arg, CTRL_BYPASS_MM_S);
 		scan_pass_watch = (UW)((mission.bypass_side == OBS_SIDE_LEFT) ?
-				SCAN_DEG_TO_IDX(SCAN_PASS_LOOK_RIGHT_DEG) :
-				SCAN_DEG_TO_IDX(SCAN_PASS_LOOK_LEFT_DEG)) + 1U;
-		
+				servo_deg_to_idx(SCAN_PASS_LOOK_RIGHT_DEG) :
+				servo_deg_to_idx(SCAN_PASS_LOOK_LEFT_DEG)) + 1U;
 		break;
 	case STEP_TURN:
-		wait_seq = (s->arg >= 0) ? turnLeft(s->arg) : turnRight(-s->arg);
+		wait_seq = (s->arg >= 0)
+			? turnLeft(s->arg) : turnRight(-s->arg);
 		break;
 	case STEP_SEARCH:
 		search_active = TRUE;
@@ -324,15 +345,19 @@ LOCAL void post_step(void)
 		break;
 	case STEP_SEARCH_TURN:
 		search_active = TRUE;
-		wait_seq = (s->arg >= 0) ? turnLeft(s->arg) : turnRight(-s->arg);
+		wait_seq = (s->arg >= 0)
+			? turnLeft(s->arg) : turnRight(-s->arg);
 		break;
 	default:
 		if (mission.state == VS_OBSTACLE_BYPASS) {
 			/* 4 Nov: straight bypass legs at CTRL_BYPASS_MM_S */
-			wait_seq = (s->arg >= 0) ? moveForwardAt(s->arg, CTRL_BYPASS_MM_S) :
-						   moveBackwardAt(-s->arg, CTRL_BYPASS_MM_S);
+			wait_seq = (s->arg >= 0)
+				? moveForwardAt(s->arg, CTRL_BYPASS_MM_S) :
+						   moveBackwardAt(-s->arg,
+						   	CTRL_BYPASS_MM_S);
 		} else {
-			wait_seq = (s->arg >= 0) ? moveForward(s->arg) : moveBackward(-s->arg);
+			wait_seq = (s->arg >= 0)
+				? moveForward(s->arg) : moveBackward(-s->arg);
 		}
 		break;
 	}
@@ -397,7 +422,8 @@ LOCAL void enter(VEHICLE_STATE s)
 		break;
 	case VS_OBSTACLE_BYPASS:
 		clear_steps();
-		(void)stop();			/* NFR2: leave LINE FOLLOWING, stop */
+		/* NFR2: leave LINE FOLLOWING, stop */
+		(void)stop();
 		bp_phase = BP_WAIT_PROFILE;
 		bp_rescanned = FALSE;
 		bypass_t0 = app_time_ms();
@@ -412,9 +438,11 @@ LOCAL void enter(VEHICLE_STATE s)
 		break;
 	case VS_FAULT_STOP:
 		clear_steps();
-		(void)motion_lock();		/* motors locked off until RESET */
+		/* motors locked off until RESET */
+		(void)motion_lock();
 		beep(400U, 800U);
-		app_log((UB*)"ctrl: FAULT STOP, mask 0x%02x\n", mission.fault_mask);
+		app_log((UB*)"ctrl: FAULT STOP, mask 0x%02x\n",
+			mission.fault_mask);
 		break;
 	default:
 		break;
@@ -451,11 +479,13 @@ LOCAL void steps_done(void)
 	case VS_OBSTACLE_BYPASS:
 		if (bp_phase == BP_REVERSING) {
 			bp_phase = BP_WAIT_PROFILE;
-			scan_rescan_request++;		/* writer: ctrl_task only */
+			/* writer: ctrl_task only */
+			scan_rescan_request++;
 		} else {
 			UW t = app_time_ms() - bypass_t0;
 			app_log((UB*)"ctrl: bypass complete in %d ms%s\n", t,
-				  (t > BYPASS_TARGET_MS) ? " (over the NFR2 limit)" : "");
+				  (t > BYPASS_TARGET_MS)
+				  	? " (over the NFR2 limit)" : "");
 			mission.bypass_fails = 0;
 			enter(VS_LINE_FOLLOWING);
 		}
@@ -468,10 +498,14 @@ LOCAL void steps_done(void)
 		} else if (init_phase == INIT_ALIGN) {
 			/* all search turns done (or the line was found and the
 			   rest skipped) */
-			if ((line_unpack_flags(line_latest) & LINE_F_ON_LINE) != 0U) {
-				app_log((UB*)"ctrl: car is on the line, ready\n");
+			if ((line_unpack_flags(line_latest) &
+			     LINE_F_ON_LINE) != 0U) {
+				app_log((UB*)"ctrl: car is on the line, "
+					     "ready\n");
 			} else {
-				app_log((UB*)"ctrl: line NOT found within %d deg after calibration: place the car on the line\n",
+				app_log((UB*)"ctrl: line NOT found within %d "
+					     "deg after calibration: place "
+					     "the car on the line\n",
 					ALIGN_SEARCH_DEG);
 			}
 			init_phase = INIT_DONE;
@@ -493,7 +527,9 @@ LOCAL void update_line_search(UW now)
 			if (ctrl_turn_centred(lw, now, line_norm[1])) {
 				if ((lw & 0xFFFFU) != search_centre_stamp) {
 					search_centre_stamp = lw & 0xFFFFU;
-					if (search_centre_ticks < 2U) search_centre_ticks++;
+					if (search_centre_ticks < 2U) {
+						search_centre_ticks++;
+					}
 				}
 			} else {
 				search_centre_ticks = 0;
@@ -505,7 +541,8 @@ LOCAL void update_line_search(UW now)
 			/* line found: stop this leg, then re-align */
 			search_active = FALSE;
 			if (mission.state == VS_INITIALISING) {
-				step_i = nsteps - 1;	/* skip the rest of the search */
+				/* skip the rest of the search */
+				step_i = nsteps - 1;
 			}
 			wait_seq = stop();
 		}
@@ -522,16 +559,19 @@ LOCAL void on_command(REMOTE_CMD c)
 
 	last_remote = (UB)c;
 	if ((c == RC_START) && (app_barcode_test != 0U)) {
-		app_log((UB*)"ctrl: START refused: barcode TEST mode is on (switch it off on the dashboard)\n");
+		app_log((UB*)"ctrl: START refused: barcode TEST mode is on "
+			     "(switch it off on the dashboard)\n");
 		beep(400U, 150U);
 		return;
 	}
 	if (c == RC_RESET) {
 		if ((cur == VS_FAULT_STOP) || (cur == VS_STOPPED) ||
 		    (cur == VS_MISSION_COMPLETE) || (cur == VS_READY)) {
-			mission.fault_mask = 0;		/* latched until RESET */
+			/* latched until RESET */
+			mission.fault_mask = 0;
 			mission.bypass_fails = 0;
-			pending_letter = 0;		/* forget a stored barcode */
+			/* forget a stored barcode */
+			pending_letter = 0;
 			hump_peak_max = 0;
 			hump_count = 0;
 			obs_valid = FALSE;
@@ -554,11 +594,14 @@ LOCAL void on_faults(UINT f)
 	VEHICLE_STATE	nxt = ctrl_on_faults(cur, f);
 	UINT		latch = f;
 
-	if (((f & FLT_LINE_LOST) != 0U) && (nxt != VS_STOPPED) && (cur != VS_FAULT_STOP)) {
-		latch &= ~FLT_LINE_LOST;	/* deliberate: turning or bypassing */
+	if (((f & FLT_LINE_LOST) != 0U) && (nxt != VS_STOPPED) &&
+		(cur != VS_FAULT_STOP)) {
+		/* deliberate: turning or bypassing */
+		latch &= ~FLT_LINE_LOST;
 	}
 	mission.fault_mask |= (UB)latch;
-	app_log((UB*)"ctrl: fault 0x%02x in state %d -> state %d\n", f, cur, nxt);
+	app_log((UB*)"ctrl: fault 0x%02x in state %d -> state %d\n", f, cur,
+		nxt);
 	publish_mission();
 	if (nxt != cur) {
 		enter(nxt);
@@ -567,23 +610,29 @@ LOCAL void on_faults(UINT f)
 
 LOCAL void on_motion(const MOTION_STATUS *m)
 {
-	if ((mission.state == VS_INITIALISING) && (init_phase == INIT_SELFTEST) &&
+	if ((mission.state == VS_INITIALISING) &&
+		(init_phase == INIT_SELFTEST) &&
 	    ((INT)m->seq == wait_seq)) {
 		wait_seq = -1;
 		if (m->event == MS_SELFTEST_PASS) {
-			app_log((UB*)"ctrl: motor + encoder self-check passed\n");
+			app_log((UB*)"ctrl: motor + encoder self-check "
+				     "passed\n");
 			if (APP_CAL_SWEEP) {
 				line_cal_request = LINE_CAL_RECORD;
-				steps[0].op = STEP_TURN; steps[0].arg = CAL_SWEEP_DEG;
-				steps[1].op = STEP_TURN; steps[1].arg = -2 * CAL_SWEEP_DEG;
-				steps[2].op = STEP_TURN; steps[2].arg = CAL_SWEEP_DEG;
+				steps[0].op = STEP_TURN;
+				steps[0].arg = CAL_SWEEP_DEG;
+				steps[1].op = STEP_TURN;
+				steps[1].arg = -2 * CAL_SWEEP_DEG;
+				steps[2].op = STEP_TURN;
+				steps[2].arg = CAL_SWEEP_DEG;
 				init_phase = INIT_CAL_SWEEP;
 				start_steps(3);
 			} else {
 				init_phase = INIT_DONE;
 				enter(VS_READY);
 			}
-		}	/* FAIL: FLT_ENCODER arrives as a fault bit -> FAULT STOP */
+		/* FAIL: FLT_ENCODER arrives as a fault bit -> FAULT STOP */
+		}
 		return;
 	}
 	if ((wait_seq >= 0) && ((INT)m->seq == wait_seq) &&
@@ -591,14 +640,16 @@ LOCAL void on_motion(const MOTION_STATUS *m)
 		if (search_active && (m->event == MS_DONE) &&
 		    (mission.state != VS_INITIALISING) &&
 		    (steps[step_i].op == STEP_SEARCH)) {
-			/* Searched the whole distance without finding the line */
+			/* Searched the whole distance without finding the
+			   line */
 			app_log((UB*)"ctrl: line not found after bypass\n");
 			mission.fault_mask |= (UB)FLT_LINE_LOST;
 			enter(VS_STOPPED);
 			return;
 		}
 		if (pass_active) {
-			app_log((UB*)"ctrl: pass leg reached its maximum (obstacle end not seen)\n");
+			app_log((UB*)"ctrl: pass leg reached its maximum "
+				     "(obstacle end not seen)\n");
 		}
 		step_i++;
 		post_step();
@@ -627,21 +678,24 @@ LOCAL void on_obstacle(const OBSTACLE_MSG *m)
 		last_obs = *m;
 		obs_valid = TRUE;
 		if (m->closest_mm == 0U) {
-			app_log((UB*)"ctrl: sweep found no obstacle, back to line following\n");
+			app_log((UB*)"ctrl: sweep found no obstacle, back to "
+				     "line following\n");
 			enter(VS_LINE_FOLLOWING);
 			break;
 		}
 		mission.bypass_side = m->side;
 		publish_mission();
 		bp_phase = BP_LEGS;
-		start_steps(ctrl_plan_bypass(m->side, m->offset_mm, m->depth_mm, steps));
+		start_steps(ctrl_plan_bypass(m->side, m->offset_mm,
+			m->depth_mm, steps));
 		break;
 	case OB_NO_CLEARANCE:
 		if (bp_phase != BP_WAIT_PROFILE) {
 			break;
 		}
 		if (!bp_rescanned) {
-			bp_rescanned = TRUE;	/* reverse and rescan once first */
+			/* reverse and rescan once first */
+			bp_rescanned = TRUE;
 			steps[0].op = STEP_MOVE;
 			steps[0].arg = -CTRL_REVERSE_MM;
 			bp_phase = BP_REVERSING;
@@ -692,7 +746,8 @@ LOCAL void on_terrain(const TERRAIN_MSG *m)
 		}
 		break;
 	case TR_LIFTED:		/* the stop itself arrives as FLT_LIFTED */
-		app_log((UB*)"ctrl: car lifted / overturned: motors stopped (end of run)\n");
+		app_log((UB*)"ctrl: car lifted / overturned: motors stopped "
+			     "(end of run)\n");
 		break;
 	default:
 		break;
@@ -718,23 +773,28 @@ LOCAL void on_cross_junction(const NAV_MSG *m)
 {
 	UW		map = app_barcode_map;		/* one copy (IF-15) */
 	BARCODE_CMD	cmd;
-	W		past_mm = (W)((motion_odo_path_01mm / 10U) - m->path_mm);
+	W		past_mm = (W)((motion_odo_path_01mm / 10U)
+		- m->path_mm);
 	INT		n;
 
 	if (pending_letter == 0U) {
-		app_log((UB*)"ctrl: cross-junction, no barcode stored: straight on\n");
+		app_log((UB*)"ctrl: cross-junction, no barcode stored: "
+			     "straight on\n");
 		return;
 	}
 	if (!ctrl_junction_can_act((VEHICLE_STATE)mission.state)) {
-		app_log((UB*)"ctrl: cross-junction in state %d: barcode '%c' kept for the next one\n",
+		app_log((UB*)"ctrl: cross-junction in state %d: barcode '%c' "
+			     "kept for the next one\n",
 			mission.state, (INT)pending_letter);
 		return;
 	}
 	cmd = app_barcode_lookup(map, pending_letter);
-	app_log((UB*)"ctrl: cross-junction: barcode '%c' -> %s (sensors %d mm past the middle)\n",
+	app_log((UB*)"ctrl: cross-junction: barcode '%c' -> %s (sensors %d "
+		     "mm past the middle)\n",
 		(INT)pending_letter, bc_name(cmd), past_mm);
 	if (map == 0U) {
-		app_log((UB*)"ctrl: NO BARCODE MAP received yet (send it from the dashboard)\n");
+		app_log((UB*)"ctrl: NO BARCODE MAP received yet (send it "
+			     "from the dashboard)\n");
 	}
 	last_letter = pending_letter;
 	last_bc = (UB)cmd;
@@ -743,7 +803,8 @@ LOCAL void on_cross_junction(const NAV_MSG *m)
 	if (n > 0) {
 		nsteps = n;
 		beep(2000U, 80U);
-		enter(VS_BARCODE_MANOEUVRE);	/* back to LINE FOLLOWING after */
+		/* back to LINE FOLLOWING after */
+		enter(VS_BARCODE_MANOEUVRE);
 	}
 }
 
@@ -754,11 +815,13 @@ LOCAL void on_nav(const NAV_MSG *m)
 	switch (m->kind) {
 	case NAV_BARCODE:
 		/* Telemetry shows every read; the movement is looked up again
-		   at the junction, so a map sent after the read still applies */
+		   at the junction, so a map sent after the read still applies
+		   */
 		cmd = app_barcode_lookup(app_barcode_map, m->letter);
 		last_letter = m->letter;
 		last_bc = (cmd == BC_UNRECOGNISED) ? m->cmd : (UB)cmd;
-		beep(2500U, 80U);			/* acknowledgement tone */
+		/* acknowledgement tone */
+		beep(2500U, 80U);
 		if ((mission.state != VS_LINE_FOLLOWING) &&
 		    (mission.state != VS_HUMP_CROSSING)) {
 			break;
@@ -768,11 +831,13 @@ LOCAL void on_nav(const NAV_MSG *m)
 			break;
 		}
 		if (pending_letter != 0U) {
-			app_log((UB*)"ctrl: barcode '%c' replaces stored '%c' (no junction in between)\n",
+			app_log((UB*)"ctrl: barcode '%c' replaces stored "
+				     "'%c' (no junction in between)\n",
 				(INT)m->letter, (INT)pending_letter);
 		}
 		pending_letter = m->letter;
-		app_log((UB*)"ctrl: barcode '%c' stored (%s): carried out at the next cross-junction\n",
+		app_log((UB*)"ctrl: barcode '%c' stored (%s): carried out at "
+			     "the next cross-junction\n",
 			(INT)m->letter, bc_name(cmd));
 		break;
 	case NAV_JUNCTION_CROSS:
@@ -780,12 +845,14 @@ LOCAL void on_nav(const NAV_MSG *m)
 		break;
 	case NAV_READ_REJECTED:
 		if (app_barcode_test != 0U) {
-			beep(600U, 250U);		/* test mode: low tone = bad read */
+			/* test mode: low tone = bad read */
+			beep(600U, 250U);
 		}
 		break;
 	case NAV_JUNCTION_RIGHT:
 		/* Isolated wide stripe under the barcode sensor alone */
-		app_log((UB*)"ctrl: single stripe on the barcode sensor at %d mm\n", m->path_mm);
+		app_log((UB*)"ctrl: single stripe on the barcode sensor at "
+			     "%d mm\n", m->path_mm);
 		break;
 	default:			/* LINE_LOST arrives as FLT_LINE_LOST */
 		break;
@@ -808,27 +875,39 @@ LOCAL void init_step(void)
 			init_phase = INIT_SELFTEST;
 			wait_seq = motion_selftest();
 		} else if ((now - phase_t0) > INIT_SENSOR_TMO_MS) {
-			app_log((UB*)"ctrl: sensors not ready at start: IMU %s, IR %s\n",
-				((rflg.flgptn & EVF_IMU_READY) != 0U) ? "ok" : "NOT READY",
-				((rflg.flgptn & EVF_LINE_READY) != 0U) ? "ok" : "NOT READY");
-			on_faults(((rflg.flgptn & EVF_IMU_READY) == 0U) ? FLT_IMU : FLT_ENCODER);
+			app_log((UB*)"ctrl: sensors not ready at start: IMU "
+				     "%s, IR %s\n",
+				((rflg.flgptn & EVF_IMU_READY) != 0U)
+					? "ok" : "NOT READY",
+				((rflg.flgptn & EVF_LINE_READY) != 0U)
+					? "ok" : "NOT READY");
+			on_faults(((rflg.flgptn & EVF_IMU_READY) == 0U)
+				? FLT_IMU : FLT_ENCODER);
 		} else {
 			/* keep waiting */
 		}
 		break;
 	case INIT_CAL_APPLY:
-		if ((now - phase_t0) > 200U) {	/* line_task applies within 20 ms */
+		/* line_task applies within 20 ms */
+		if ((now - phase_t0) > 200U) {
 			line_cal_request = LINE_CAL_IDLE;
-			/* The sweep may end a few degrees off: turn back onto the
-			   line (left first, then right, then back to the start) */
+			/* The sweep may end a few degrees off: turn back onto
+			   the
+			   line (left first, then right, then back to the start)
+			   */
 			init_phase = INIT_ALIGN;
-			if ((line_unpack_flags(line_latest) & LINE_F_ON_LINE) != 0U) {
+			if ((line_unpack_flags(line_latest) &
+			     LINE_F_ON_LINE) != 0U) {
 				start_steps(0);		/* already on it */
 			} else {
-				app_log((UB*)"ctrl: off the line after calibration, searching\n");
-				steps[0].op = STEP_SEARCH_TURN; steps[0].arg = ALIGN_SEARCH_DEG;
-				steps[1].op = STEP_SEARCH_TURN; steps[1].arg = -2 * ALIGN_SEARCH_DEG;
-				steps[2].op = STEP_TURN;        steps[2].arg = ALIGN_SEARCH_DEG;
+				app_log((UB*)"ctrl: off the line after "
+					     "calibration, searching\n");
+				steps[0].op = STEP_SEARCH_TURN;
+				steps[0].arg = ALIGN_SEARCH_DEG;
+				steps[1].op = STEP_SEARCH_TURN;
+				steps[1].arg = -2 * ALIGN_SEARCH_DEG;
+				steps[2].op = STEP_TURN;
+				steps[2].arg = ALIGN_SEARCH_DEG;
 				start_steps(3);
 			}
 		}
@@ -847,18 +926,22 @@ LOCAL void send_telemetry(void)
 	T_RFLG		rflg;
 
 	(void)tk_ref_flg(flg_sys, &rflg);
-	t.status = (((UW)mission.state & TLM_STATE_MASK) << TLM_STATE_SHIFT) |
-		   (((UW)last_bc & TLM_BARCODE_MASK) << TLM_BARCODE_SHIFT) |
-		   (((UW)last_remote & TLM_REMOTE_MASK) << TLM_REMOTE_SHIFT) |
-		   (((UW)line_unpack_flags(lw) & TLM_LINEF_MASK) << TLM_LINEF_SHIFT) |
-		   ((sw & TLM_SERVO_MASK) << TLM_SERVO_SHIFT) |
-		   (((rflg.flgptn & EVF_HUMP_ACTIVE) != 0U ? 1UL : 0UL) << TLM_HUMP_SHIFT) |
-		   ((obs_valid ? 1UL : 0UL) << TLM_OBST_SHIFT) |
-		   ((app_watchdog_caused_reboot() ? 1UL : 0UL) << TLM_WDT_SHIFT) |
-		   (((UW)mission.bypass_side & TLM_SIDE_MASK) << TLM_SIDE_SHIFT) |
-		   (((UW)mission.bypass_fails & TLM_FAILS_MASK) << TLM_FAILS_SHIFT) |
-		   ((iw & TLM_MEVENT_MASK) << TLM_MEVENT_SHIFT) |
-		   ((comms_state_word == CS_ONLINE ? 1UL : 0UL) << TLM_LINK_SHIFT);
+	t.status =
+	    (((UW)mission.state & TLM_STATE_MASK) << TLM_STATE_SHIFT) |
+	    (((UW)last_bc & TLM_BARCODE_MASK) << TLM_BARCODE_SHIFT) |
+	    (((UW)last_remote & TLM_REMOTE_MASK) << TLM_REMOTE_SHIFT) |
+	    (((UW)line_unpack_flags(lw) & TLM_LINEF_MASK) <<
+	     TLM_LINEF_SHIFT) |
+	    ((sw & TLM_SERVO_MASK) << TLM_SERVO_SHIFT) |
+	    (((rflg.flgptn & EVF_HUMP_ACTIVE) != 0U ? 1UL : 0UL) <<
+	     TLM_HUMP_SHIFT) |
+	    ((obs_valid ? 1UL : 0UL) << TLM_OBST_SHIFT) |
+	    ((app_watchdog_caused_reboot() ? 1UL : 0UL) << TLM_WDT_SHIFT) |
+	    (((UW)mission.bypass_side & TLM_SIDE_MASK) << TLM_SIDE_SHIFT) |
+	    (((UW)mission.bypass_fails & TLM_FAILS_MASK) <<
+	     TLM_FAILS_SHIFT) |
+	    ((iw & TLM_MEVENT_MASK) << TLM_MEVENT_SHIFT) |
+	    ((comms_state_word == CS_ONLINE ? 1UL : 0UL) << TLM_LINK_SHIFT);
 	t.fault_mask = mission.fault_mask;
 	t.letter = last_letter;
 	t.hump_count = hump_count;
@@ -886,8 +969,10 @@ LOCAL void poll_buttons(void)
 	static UB	hist_start, hist_stop;
 	static BOOL	down_start, down_stop;
 
-	hist_start = (UB)((hist_start << 1) | (drv_button_raw(BTN_START_PIN) ? 1U : 0U));
-	hist_stop = (UB)((hist_stop << 1) | (drv_button_raw(BTN_STOP_PIN) ? 1U : 0U));
+	hist_start = (UB)(((UW)hist_start << 1)
+		| (drv_button_raw(BTN_START_PIN) ? 1U : 0U));
+	hist_stop = (UB)(((UW)hist_stop << 1)
+		| (drv_button_raw(BTN_STOP_PIN) ? 1U : 0U));
 
 	if (((hist_stop & 0x3U) == 0x3U) && !down_stop) {
 		down_stop = TRUE;
@@ -898,7 +983,8 @@ LOCAL void poll_buttons(void)
 	if (((hist_start & 0x3U) == 0x3U) && !down_start) {
 		down_start = TRUE;
 		/* START when stopped/ready; RESET when in FAULT STOP or done */
-		if ((mission.state == VS_FAULT_STOP) || (mission.state == VS_MISSION_COMPLETE)) {
+		if ((mission.state == VS_FAULT_STOP) ||
+			(mission.state == VS_MISSION_COMPLETE)) {
 			on_command(RC_RESET);
 		} else {
 			on_command(RC_START);
@@ -911,15 +997,70 @@ LOCAL void poll_buttons(void)
 /* ---------------------------------------------------------------------
  *  The task
  * --------------------------------------------------------------------- */
+/* Steps 3-6 of the cycle: every report the other tasks queued */
+LOCAL void ctrl_drain_reports(void)
+{
+	MOTION_STATUS	ms;
+	OBSTACLE_MSG	om;
+	TERRAIN_MSG	tm;
+	NAV_MSG		nm;
+
+	/* 3-6. Reports */
+	while (tk_rcv_mbf(mbf_motion_status, &ms, TMO_POL) == (INT)sizeof(ms)) {
+		on_motion(&ms);
+	}
+	while (tk_rcv_mbf(mbf_obstacle, &om, TMO_POL) == (INT)sizeof(om)) {
+		on_obstacle(&om);
+	}
+	while (tk_rcv_mbf(mbf_terrain, &tm, TMO_POL) == (INT)sizeof(tm)) {
+		on_terrain(&tm);
+	}
+	while (tk_rcv_mbf(mbf_nav, &nm, TMO_POL) == (INT)sizeof(nm)) {
+		on_nav(&nm);
+	}
+}
+
+/* Step 7 of the cycle: periodic work */
+LOCAL void ctrl_periodic(UW now, UW *last_tlm)
+{
+	/* 7. Periodic */
+	if (mission.state == VS_INITIALISING) {
+		init_step();
+	}
+	if (pass_active && (scan_pass_seq != pass_seq0)) {
+		/* obstacle is behind: drive only the rest, then turn in */
+		UW extra = scan_pass_extra_mm;
+
+		pass_active = FALSE;
+		scan_pass_watch = 0;
+		app_log((UB*)"ctrl: obstacle passed, %d mm more then "
+			     "turning in\n", extra);
+		wait_seq = (extra >= 10U) ?
+			   moveForwardAt((W)extra, CTRL_BYPASS_MM_S) : stop();
+	}
+	/* Barcode TEST mode switched on while driving: stop at once */
+	if ((app_barcode_test != 0U) &&
+	    ctrl_is_active((VEHICLE_STATE)mission.state)) {
+		app_log((UB*)"ctrl: barcode TEST mode on: stopping\n");
+		enter(VS_STOPPED);
+	}
+	update_line_search(now);
+	if ((now - *last_tlm) >= TLM_PERIOD_MS) {
+		*last_tlm = now;
+		send_telemetry();
+	}
+	if ((buzz_off_at != 0U) && ((W)(now - buzz_off_at) >= 0)) {
+		buzz_off_at = 0;
+		drv_buzzer_tone(0);
+	}
+	song_step(now);
+}
+
 EXPORT void ctrl_task(INT stacd, void *exinf)
 {
 	UINT		ptn;
 	ER		er;
 	REMOTE_MSG	rm;
-	MOTION_STATUS	ms;
-	OBSTACLE_MSG	om;
-	TERRAIN_MSG	tm;
-	NAV_MSG		nm;
 	UW		now;
 	UW		last_tlm = 0;
 	UW		last_btn = 0;
@@ -937,16 +1078,19 @@ EXPORT void ctrl_task(INT stacd, void *exinf)
 
 	while (1) {
 		ptn = 0;
-		er = tk_wai_flg(flg_sys, EVF_CTRL_WAKE, TWF_ORW, &ptn, S5_CTRL_TICK_MS);
+		er = tk_wai_flg(flg_sys, EVF_CTRL_WAKE, TWF_ORW, &ptn,
+			S5_CTRL_TICK_MS);
 		app_watchdog_feed();
 		if (er == E_OK) {
-			/* clear exactly what we saw, before draining the queues */
+			/* clear exactly what we saw, before draining the
+			   queues */
 			(void)tk_clr_flg(flg_sys, ~(ptn & EVF_CTRL_WAKE));
 		}
 		now = app_time_ms();
 
 		/* 1. Commands first: STOP must never wait behind navigation */
-		while (tk_rcv_mbf(mbf_remote, &rm, TMO_POL) == (INT)sizeof(rm)) {
+		while (tk_rcv_mbf(mbf_remote, &rm,
+			TMO_POL) == (INT)sizeof(rm)) {
 			on_command((REMOTE_CMD)(rm.cmd & 0x3U));
 		}
 		if ((now - last_btn) >= S5_CTRL_TICK_MS) {
@@ -959,47 +1103,8 @@ EXPORT void ctrl_task(INT stacd, void *exinf)
 			on_faults(ptn & FLT_ALL);
 		}
 
-		/* 3-6. Reports */
-		while (tk_rcv_mbf(mbf_motion_status, &ms, TMO_POL) == (INT)sizeof(ms)) {
-			on_motion(&ms);
-		}
-		while (tk_rcv_mbf(mbf_obstacle, &om, TMO_POL) == (INT)sizeof(om)) {
-			on_obstacle(&om);
-		}
-		while (tk_rcv_mbf(mbf_terrain, &tm, TMO_POL) == (INT)sizeof(tm)) {
-			on_terrain(&tm);
-		}
-		while (tk_rcv_mbf(mbf_nav, &nm, TMO_POL) == (INT)sizeof(nm)) {
-			on_nav(&nm);
-		}
+		ctrl_drain_reports();
 
-		/* 7. Periodic */
-		if (mission.state == VS_INITIALISING) {
-			init_step();
-		}
-		if (pass_active && (scan_pass_seq != pass_seq0)) {
-			/* obstacle is behind: drive only the rest, then turn in */
-			UW extra = scan_pass_extra_mm;
-
-			pass_active = FALSE;
-			scan_pass_watch = 0;
-			app_log((UB*)"ctrl: obstacle passed, %d mm more then turning in\n", extra);
-			wait_seq = (extra >= 10U) ? moveForwardAt((W)extra, CTRL_BYPASS_MM_S) : stop();
-		}
-		/* Barcode TEST mode switched on while driving: stop at once */
-		if ((app_barcode_test != 0U) && ctrl_is_active((VEHICLE_STATE)mission.state)) {
-			app_log((UB*)"ctrl: barcode TEST mode on: stopping\n");
-			enter(VS_STOPPED);
-		}
-		update_line_search(now);
-		if ((now - last_tlm) >= TLM_PERIOD_MS) {
-			last_tlm = now;
-			send_telemetry();
-		}
-		if ((buzz_off_at != 0U) && ((W)(now - buzz_off_at) >= 0)) {
-			buzz_off_at = 0;
-			drv_buzzer_tone(0);
-		}
-		song_step(now);
+		ctrl_periodic(now, &last_tlm);
 	}
 }

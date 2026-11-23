@@ -34,7 +34,8 @@ static void enc_sm_start(PIO pio, uint32_t sm, uint32_t pin)
 	sm_config_set_jmp_pin(&c, pin);
 	sm_config_set_in_shift(&c, false, false, 32);
 	sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_NONE);
-	sm_config_set_clkdiv_int_frac(&c, 1, 0);	/* full speed: 12.5 Msteps/s */
+	/* full speed: 12.5 Msteps/s */
+	sm_config_set_clkdiv_int_frac(&c, 1, 0);
 
 	pio_sm_init(pio, sm, 0, &c);
 	pio_sm_set_enabled(pio, sm, true);
@@ -56,7 +57,8 @@ int32_t drv_encoder_init(uint32_t pin_left_a, uint32_t pin_right_a,
 	for (i = 0; i < 2; i++) {
 		PIO p = candidates[i];
 
-		if (!pio_can_add_program_at_offset(p, &quadrature_encoder_program, 0)) {
+		if (!pio_can_add_program_at_offset(p,
+			&quadrature_encoder_program, 0)) {
 			continue;
 		}
 		sm_l = pio_claim_unused_sm(p, false);
@@ -67,7 +69,8 @@ int32_t drv_encoder_init(uint32_t pin_left_a, uint32_t pin_right_a,
 			}
 			continue;
 		}
-		(void)pio_add_program_at_offset(p, &quadrature_encoder_program, 0);
+		(void)pio_add_program_at_offset(p,
+			&quadrature_encoder_program, 0);
 		enc_pio = p;
 		enc_sm[0] = (uint32_t)sm_l;
 		enc_sm[1] = (uint32_t)sm_r;

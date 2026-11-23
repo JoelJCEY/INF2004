@@ -51,6 +51,8 @@
 #define TLM_MEVENT_SHIFT	25	/* 3 bits motion event       */
 #define TLM_MEVENT_MASK		0x7U
 #define TLM_LINK_SHIFT		28	/* 1 bit MQTT connected      */
+/* Macros, not functions: they paste the field name into its _SHIFT and
+   _MASK constants (##), which a function cannot do */
 #define TLM_FIELD(w, f)		(((w) >> TLM_##f##_SHIFT) & TLM_##f##_MASK)
 #define TLM_BIT(w, f)		(((w) >> TLM_##f##_SHIFT) & 1U)
 
@@ -155,7 +157,8 @@ IMPORT volatile UW comms_state_word;	/* COMMS_STATE */
 IMPORT ID	tid_comms;
 IMPORT ID	mbf_outbox;		/* encoded frames waiting for MQTT */
 IMPORT volatile UW comms_rx_rejected;
-IMPORT volatile UW comms_mqtt_connected;	/* writer: Wi-Fi task via bridge */
+/* writer: Wi-Fi task via bridge */
+IMPORT volatile UW comms_mqtt_connected;
 IMPORT volatile UW comms_outbox_dropped;
 IMPORT void	comms_task(INT stacd, void *exinf);
 

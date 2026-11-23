@@ -29,18 +29,21 @@ EXPORT ER subsystem2_init(void)
 	drv_motor_init();
 
 	/* Encoders: log PIO block and offset at boot (A2 validation) */
-	motion_encoders_ok = (drv_encoder_init(ENC_L_A_PIN, ENC_R_A_PIN, &info) == 0)
+	motion_encoders_ok = (drv_encoder_init(ENC_L_A_PIN, ENC_R_A_PIN,
+		&info) == 0)
 			     ? TRUE : FALSE;
 	if (motion_encoders_ok) {
 		app_log((UB*)"motion: encoders on PIO%d offset %d, SM %d/%d\n",
 			  info.pio_index, info.offset, info.sm[0], info.sm[1]);
 	} else {
-		app_log((UB*)"motion: ENCODER PIO LOAD FAILED (offset 0 taken)\n");
+		app_log((UB*)"motion: ENCODER PIO LOAD FAILED (offset 0 "
+			     "taken)\n");
 	}
 
 	/* IF-05 Motion Command Queue: 8 fixed-size messages */
 	cmbf.mbfatr = TA_TFIFO;
-	cmbf.bufsz  = (SZ)(S2_CMD_QUEUE_MSGS * (sizeof(MOTION_CMD) + sizeof(INT)));
+	cmbf.bufsz  = (SZ)(S2_CMD_QUEUE_MSGS * (sizeof(MOTION_CMD)
+		+ sizeof(INT)));
 	cmbf.maxmsz = (INT)sizeof(MOTION_CMD);
 	mbf_motion_cmd = tk_cre_mbf(&cmbf);
 	if (mbf_motion_cmd < E_OK) {
@@ -58,7 +61,8 @@ EXPORT ER subsystem2_init(void)
 
 EXPORT ER subsystem2_start(void)
 {
-	tid_motion = app_start_task(motion_task, S2_PRI_MOTION, 0, "motion_task");
+	tid_motion = app_start_task(motion_task, S2_PRI_MOTION, 0,
+		"motion_task");
 	if (tid_motion < E_OK) {
 		return tid_motion;
 	}

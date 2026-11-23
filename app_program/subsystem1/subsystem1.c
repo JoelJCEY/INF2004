@@ -18,7 +18,8 @@ EXPORT ER subsystem1_init(void)
 
 	/* IF-01 Telemetry Queue: a few complete snapshots */
 	cmbf.mbfatr = TA_TFIFO;
-	cmbf.bufsz  = (SZ)(S1_TLM_QUEUE_MSGS * (sizeof(TLM_SNAPSHOT) + sizeof(INT)));
+	cmbf.bufsz  = (SZ)(S1_TLM_QUEUE_MSGS * (sizeof(TLM_SNAPSHOT)
+		+ sizeof(INT)));
 	cmbf.maxmsz = (INT)sizeof(TLM_SNAPSHOT);
 	mbf_telemetry = tk_cre_mbf(&cmbf);
 	if (mbf_telemetry < E_OK) {
@@ -26,7 +27,8 @@ EXPORT ER subsystem1_init(void)
 	}
 
 	/* Offline buffer: the 16 newest encoded frames */
-	cmbf.bufsz  = (SZ)(S1_OUTBOX_FRAMES * (WIRE_TLM_LEN + (INT)sizeof(INT)));
+	cmbf.bufsz  = (SZ)(S1_OUTBOX_FRAMES * (WIRE_TLM_LEN
+		+ (INT)sizeof(INT)));
 	cmbf.maxmsz = WIRE_TLM_LEN;
 	mbf_outbox = tk_cre_mbf(&cmbf);
 	return (mbf_outbox < E_OK) ? mbf_outbox : E_OK;

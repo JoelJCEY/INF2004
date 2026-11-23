@@ -47,9 +47,15 @@ LOCAL W drive_over(W hmax_um, W len_mm, W total_mm, INT *starts, INT *discards)
 		dh = hump_shape(s - 100, hmax_um, len_mm) -
 		     hump_shape(s - 100 - HUMP_WHEELBASE_MM, hmax_um, len_mm);
 		e = hump_update(&t_hump, dh, (UW)(s * 10), &p);
-		if (e == HE_START) (*starts)++;
-		if (e == HE_DISCARD) (*discards)++;
-		if (e == HE_END) peak = p;
+		if (e == HE_START) {
+			(*starts)++;
+		}
+		if (e == HE_DISCARD) {
+			(*discards)++;
+		}
+		if (e == HE_END) {
+			peak = p;
+		}
 	}
 	return peak;
 }
@@ -63,8 +69,12 @@ LOCAL W hump_sin1000_t(W d)
 {
 	W	sg = 1;
 
-	while (d > 180) d -= 360;
-	while (d <= -180) d += 360;
+	while (d > 180) {
+		d -= 360;
+	}
+	while (d <= -180) {
+		d += 360;
+	}
 	if (d < 0) { d = -d; sg = -1; }
 	return sg * ((4 * d * (180 - d) * 1000) / (40500 - (d * (180 - d))));
 }
@@ -79,7 +89,8 @@ LOCAL W noise(W amp)
 /* Feed n readings: tilt deg about the forward axis (0 = level, 180 =
    upside down), extra push up (mg), sideways/forward push (mg), noise.
    Returns the first result that is not LIFT_NONE (and when). */
-LOCAL LIFT_RESULT lift_feed(LIFT_DET *d, W *f, INT n, W tilt_deg, W up_mg, W fwd_mg,
+LOCAL LIFT_RESULT lift_feed(LIFT_DET *d, W *f, INT n, W tilt_deg, W up_mg,
+	W fwd_mg,
 			    W noise_mg, BOOL on_hump, INT *at)
 {
 	INT		i;
@@ -94,9 +105,9 @@ LOCAL LIFT_RESULT lift_feed(LIFT_DET *d, W *f, INT n, W tilt_deg, W up_mg, W fwd
 		raw[0] = fwd_mg + noise(noise_mg);
 		raw[1] = ((g * s1000) / 1000) + noise(noise_mg);
 		raw[2] = ((g * c1000) / 1000) + noise(noise_mg);
-		f[0] += (raw[0] - f[0]) >> 2;
-		f[1] += (raw[1] - f[1]) >> 2;
-		f[2] += (raw[2] - f[2]) >> 2;
+		f[0] += app_asr(raw[0] - f[0], 2U);
+		f[1] += app_asr(raw[1] - f[1], 2U);
+		f[2] += app_asr(raw[2] - f[2], 2U);
 		r = lift_update(d, raw, f, on_hump);
 		if ((r != LIFT_NONE) && (first == LIFT_NONE)) {
 			first = r;
@@ -112,25 +123,28 @@ EXPORT void subsystem4_test(void)
 	INT	starts, discards;
 	T_RFLG	rflg;
 
-	TEST_INIT();
+	test_init();
 
 	/* S4-U01: integer square root */
-	TEST_CHECK("S4-U01", (hump_isqrt(1000000U) == 1000U) && (hump_isqrt(99U) == 9U),
+	TEST_CHECK("S4-U01", (hump_isqrt(1000000U) == 1000U) &&
+		(hump_isqrt(99U) == 9U),
 		   "integer sqrt");
 
 	/* S4-U02: 20 mm hump, 200 mm long: peak within ±5 mm or 15% (NFR5) */
 	peak = drive_over(20000, 200, 800, &starts, &discards);
-	TEST_CHECK("S4-U02", (starts == 1) && (APP_ABS(peak - 20000) <= 3000),
+	TEST_CHECK("S4-U02", (starts == 1) && (app_abs(peak - 20000) <= 3000),
 		   "20 mm hump reconstructed within 15%");
 	tm_printf((UB*)"[TEST] S4 info: reconstructed peak %d um\n", peak);
 
 	/* S4-U03: a 600 mm climb is a ramp, discarded (> 500 mm) */
 	peak = drive_over(60000, 1400, 1600, &starts, &discards);
-	TEST_CHECK("S4-U03", (peak < 0) && (discards >= 1), "long climb discarded");
+	TEST_CHECK("S4-U03", (peak < 0) &&
+		(discards >= 1), "long climb discarded");
 
 	/* S4-U04: flat track gives no hump at all */
 	peak = drive_over(0, 200, 5000, &starts, &discards);
-	TEST_CHECK("S4-U04", (starts == 0) && (peak < 0), "no false hump on flat track");
+	TEST_CHECK("S4-U04", (starts == 0) &&
+		(peak < 0), "no false hump on flat track");
 
 	/* S4-U05: IMU answered and the level baseline finished */
 	tk_dly_tsk(500);	/* baseline takes 1 s after imu_task starts */
@@ -146,32 +160,46 @@ EXPORT void subsystem4_test(void)
 
 		/* S4-U05: things that must NOT stop the car */
 		lift_init(&ld, 0, 0, 1000);  f[0] = 0; f[1] = 0; f[2] = 1000;
-		r1 = lift_feed(&ld, f, 250, 0, 0, 0, 40, FALSE, &at);		/* 5 s still   */
-		r2 = lift_feed(&ld, f, 25, 0, 0, 300, 80, FALSE, &at);		/* speeding up */
-		r3 = lift_feed(&ld, f, 50, 15, 0, 0, 60, TRUE, &at);		/* 15 deg hump */
-		r3 = (LIFT_RESULT)(r3 | lift_feed(&ld, f, 1, 15, 2500, 0, 0, TRUE, &at));	/* landing */
-		r3 = (LIFT_RESULT)(r3 | lift_feed(&ld, f, 25, 0, 0, 0, 60, FALSE, &at));
-		r4 = lift_feed(&ld, f, 1, 0, 2500, 0, 0, FALSE, &at);		/* one 2.5 g bump  */
-		r4 = (LIFT_RESULT)(r4 | lift_feed(&ld, f, 1, 0, 1200, 0, 0, FALSE, &at));	/* + echo */
-		r4 = (LIFT_RESULT)(r4 | lift_feed(&ld, f, 25, 0, 0, 0, 40, FALSE, &at));
+		/* 5 s still */
+		r1 = lift_feed(&ld, f, 250, 0, 0, 0, 40, FALSE, &at);
+		/* speeding up */
+		r2 = lift_feed(&ld, f, 25, 0, 0, 300, 80, FALSE, &at);
+		/* 15 deg hump */
+		r3 = lift_feed(&ld, f, 50, 15, 0, 0, 60, TRUE, &at);
+		/* landing */
+		r3 = (LIFT_RESULT)(r3
+			| lift_feed(&ld, f, 1, 15, 2500, 0, 0, TRUE, &at));
+		r3 = (LIFT_RESULT)(r3
+			| lift_feed(&ld, f, 25, 0, 0, 0, 60, FALSE, &at));
+		/* one 2.5 g bump */
+		r4 = lift_feed(&ld, f, 1, 0, 2500, 0, 0, FALSE, &at);
+		/* + echo */
+		r4 = (LIFT_RESULT)(r4
+			| lift_feed(&ld, f, 1, 0, 1200, 0, 0, FALSE, &at));
+		r4 = (LIFT_RESULT)(r4
+			| lift_feed(&ld, f, 25, 0, 0, 0, 40, FALSE, &at));
 		TEST_CHECK("S4-U05", (r1 == LIFT_NONE) && (r2 == LIFT_NONE) &&
 			   (r3 == LIFT_NONE) && (r4 == LIFT_NONE),
-			   "no stop: still, speeding up, 15 deg hump + landing, 2.5 g bump");
+			   "no stop: still, speeding up, 15 deg hump + "
+			   "landing, 2.5 g bump");
 
 		/* S4-U05b (13 Nov): a 60 ms 0.6 g jolt (button pressed, knock,
 		   tile edge) is not a lift; a slower 0.3 g lift still is */
 		r1 = lift_feed(&ld, f, 3, 0, 600, 0, 40, FALSE, &at);
-		r1 = (LIFT_RESULT)(r1 | lift_feed(&ld, f, 25, 0, 0, 0, 40, FALSE, &at));
+		r1 = (LIFT_RESULT)(r1
+			| lift_feed(&ld, f, 25, 0, 0, 0, 40, FALSE, &at));
 		r2 = lift_feed(&ld, f, 10, 0, 300, 0, 40, FALSE, &at);
 		lift_init(&ld, 0, 0, 1000);  f[0] = 0; f[1] = 0; f[2] = 1000;
 		TEST_CHECK("S4-U05b", (r1 == LIFT_NONE) && (r2 == LIFT_LIFTED),
-			   "60 ms jolt ignored; gentle 0.3 g lift for 0.2 s caught");
+			   "60 ms jolt ignored; gentle 0.3 g lift for 0.2 s "
+			   "caught");
 
 		/* S4-U06: lifted by hand: 0.4 g upward push for 0.2 s */
 		r1 = lift_feed(&ld, f, 10, 0, 400, 0, 60, FALSE, &at);
 		TEST_CHECK("S4-U06", (r1 == LIFT_LIFTED) && (at <= 6),
 			   "hand lift (0.4 g up) -> LIFTED within 140 ms");
-		tm_printf((UB*)"[TEST] S4 info: lift seen after %d readings (%d ms)\n", at + 1, (at + 1) * 20);
+		tm_printf((UB*)"[TEST] S4 info: lift seen after %d readings "
+			       "(%d ms)\n", at + 1, (at + 1) * 20);
 
 		/* S4-U07: tipped on its side, upside down, dropped */
 		lift_init(&ld, 0, 0, 1000);  f[0] = 0; f[1] = 0; f[2] = 1000;
@@ -179,13 +207,16 @@ EXPORT void subsystem4_test(void)
 		lift_init(&ld, 0, 0, 1000);  f[0] = 0; f[1] = 0; f[2] = 1000;
 		r2 = lift_feed(&ld, f, 25, 180, 0, 0, 40, FALSE, &at);
 		lift_init(&ld, 0, 0, 1000);  f[0] = 0; f[1] = 0; f[2] = 1000;
-		r3 = lift_feed(&ld, f, 15, 0, -1000, 0, 20, FALSE, &at);	/* free fall */
-		TEST_CHECK("S4-U07", (r1 == LIFT_OVERTURNED) && (r2 == LIFT_OVERTURNED) &&
+		/* free fall */
+		r3 = lift_feed(&ld, f, 15, 0, -1000, 0, 20, FALSE, &at);
+		TEST_CHECK("S4-U07", (r1 == LIFT_OVERTURNED) &&
+			(r2 == LIFT_OVERTURNED) &&
 			   (r3 == LIFT_OVERTURNED),
-			   "on its side, upside down, or dropped -> OVERTURNED (stop)");
+			   "on its side, upside down, or dropped -> "
+			   "OVERTURNED (stop)");
 	}
 
-	TEST_SUMMARY("subsystem4");
+	test_summary("subsystem4");
 }
 
 #endif /* APP_TEST */

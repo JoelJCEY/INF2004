@@ -13,8 +13,9 @@
 #include "subsystem2.h"
 
 /* µm travelled per encoder count: pi * D * 1000 / CPR */
-#define MOTION_UM_PER_COUNT \
-	((W)(((UW)MOTION_WHEEL_DIAM_MM * 3141593UL) / ((UW)MOTION_COUNTS_PER_REV * 1000UL)))
+#define MOTION_UM_PER_COUNT					\
+	((W)(((UW)MOTION_WHEEL_DIAM_MM * 3141593UL) /		\
+	     ((UW)MOTION_COUNTS_PER_REV * 1000UL)))
 
 /* ---------------------------------------------------------------------
  *  PID with Q8 gains, clamped integrator (VA2: no wind-up after a turn)
@@ -41,7 +42,8 @@ IMPORT W    motion_pid_step(MOTION_PID *pid, W err);
  * --------------------------------------------------------------------- */
 #define MOTION_STALL_PCT	20
 #define MOTION_STALL_TICKS	(300 / S2_PERIOD_MS)	/* 15 ticks */
-#define MOTION_STALL_MIN_CMD	40	/* mm/s: below this nothing is "commanded" */
+/* mm/s: below this nothing is "commanded" */
+#define MOTION_STALL_MIN_CMD	40
 
 typedef struct {
 	UB	ticks;

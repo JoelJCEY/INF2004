@@ -7,6 +7,9 @@
 #include "subsystem3/drv_ir_adc.h"
 #include "subsystem2/motion_ctrl.h"
 #include "subsystem5/subsystem5.h"
+#include "subsystem5/ctrl_logic.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 ID tid_line = 1, mbf_nav = 2, flg_sys = 3;
 volatile UW motion_odo_path_01mm, motion_mode_word = MM_FOLLOW;
@@ -40,14 +43,24 @@ ER tk_slp_tsk(TMO t)
 {
     int c = 1, r = 0, l = 0;
     (void)t;
+    if (getenv("SIMLINE_TRACE")) /* per-cycle output, for before/after diffs */
+        printf("t%u err %d flags %x nav %d cross %d\n", (unsigned)tick,
+               (int)line_unpack_err(line_latest),
+               (unsigned)line_unpack_flags(line_latest), barcode_reads, crosses);
     if (tick) {
         INT e = line_unpack_err(line_latest);
         unsigned prev = tick - 1;
         if (scenario == 0) {
-            if (prev >= 20 && prev < 55) assert(e < 0 && e > -LINE_ERR_MAX);
-            if (prev >= 56 && prev < 60) assert(e < 0 && e > -LINE_ERR_MAX);
+            /* 16 Nov early hold: C and R both black at tick 20, so a
+               right correction is held at 0 for CROSS_EARLY_HOLD_MM
+               (45 mm = about 37 cycles at 1.2 mm per cycle), even
+               while only R sees the line.  This scenario feeds a fixed
+               sensor pattern (the car does not turn), so it only checks
+               the rule, not whether a real car stays on a right curve. */
+            if (prev >= 19 && prev < 55) assert(e == 0);
+            if (prev >= 60 && prev < 80) assert(e < 0 && e > -LINE_ERR_MAX);
             if (prev >= 82) assert(e == 0);
-            assert(APP_ABS(e) < LINE_ERR_MAX);
+            assert(app_abs(e) < LINE_ERR_MAX);
             assert(crosses == 0);
         } else if (scenario == 1) {
             unsigned end=lost_stop ? 620 : long_left ? 270 : 28;
@@ -129,6 +142,14 @@ ER tk_snd_mbf(ID id, const void *m, INT sz, TMO timeout)
     }
     return E_OK;
 }
+/* 16 Nov lift check: no hump, car driving (line following) */
+ER tk_ref_flg(ID id, T_RFLG *r) { (void)id; r->flgptn = 0; return E_OK; }
+void ctrl_get_mission(MISSION_STATE *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->state = VS_LINE_FOLLOWING;
+}
+BOOL ctrl_is_active(VEHICLE_STATE s) { return s == VS_LINE_FOLLOWING; }
 int32_t drv_ir_adc_init(void) { return 0; }
 uint32_t drv_ir_adc_samples_written(void) { return written; }
 const volatile uint16_t *drv_ir_adc_ring(void) { return ring; }
@@ -136,6 +157,7 @@ uint32_t drv_ir_adc_take_errors(void) { return 0; }
 
 int main(int argc, char **argv)
 {
+    setvbuf(stdout, NULL, _IONBF, 0);
     assert(argc == 2);
     long_left=!strcmp(argv[1], "long-left");
     barcode_only=!strcmp(argv[1], "barcode-only");
@@ -156,7 +178,7 @@ int main(int argc, char **argv)
             }
             if (ch<2) { edge+=3000; barcode_edges[i++]=edge; }
         }
-        app_barcode_map=APP_BARCODE_MAP('F','A','L','R');
+        app_barcode_map=app_barcode_map_pack('F','A','L','R');
     }
     if (!setjmp(finished)) line_task(0, NULL);
     if (scenario >= 2) assert(crosses == 1);

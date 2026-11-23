@@ -26,7 +26,8 @@
  *  Replace with the A2 measurements (S2-M01, ruler, 1 m run, 90° turn).
  * --------------------------------------------------------------------- */
 #define MOTION_WHEEL_DIAM_MM	65	/* est.: 204.2 mm / pi               */
-#define MOTION_COUNTS_PER_REV	2750	/* measured 26 Oct by hand: L 2885, R 2601 */
+/* measured 26 Oct by hand: L 2885, R 2601 */
+#define MOTION_COUNTS_PER_REV	2750
 #define MOTION_TRACK_MM		117	/* est.: wheel centre to wheel centre */
 /* 4 Nov: pivot turns went too far (90 deg commanded -> about 110 on the
    track: tyre scrub and the 117 mm estimate).  Every turn on the spot
@@ -52,7 +53,8 @@
 #define MOTION_SYNC_R_X1000	1000
 
 /* Encoder sign: set to 1 if a wheel counts down while driving forward */
-#define MOTION_ENC_L_INVERT	0	/* hand test: left counts up turning forward */
+/* hand test: left counts up turning forward */
+#define MOTION_ENC_L_INVERT	0
 #define MOTION_ENC_R_INVERT	1	/* mirrored mounting on the right */
 
 /* ---------------------------------------------------------------------
@@ -87,12 +89,17 @@ IMPORT ID	mbf_motion_cmd;
  *  followed by tk_set_flg(flg_sys, EVF_MOTION).
  * --------------------------------------------------------------------- */
 typedef enum {
-	MS_DONE			= 1,	/* move or turn reached its target      */
-	MS_STOPPED		= 2,	/* wheels at rest after MC_STOP         */
-	MS_STALL		= 3,	/* also sets FLT_STALL                  */
-	MS_ENCODER_FAULT	= 4,	/* also sets FLT_ENCODER                */
+	/* move or turn reached its target */
+	MS_DONE			= 1,
+	/* wheels at rest after MC_STOP */
+	MS_STOPPED		= 2,
+	/* also sets FLT_STALL */
+	MS_STALL		= 3,
+	/* also sets FLT_ENCODER */
+	MS_ENCODER_FAULT	= 4,
 	MS_SELFTEST_PASS	= 5,
-	MS_SELFTEST_FAIL	= 6	/* also sets FLT_ENCODER                */
+	/* also sets FLT_ENCODER */
+	MS_SELFTEST_FAIL	= 6
 } MOTION_EVENT;
 
 typedef struct {

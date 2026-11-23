@@ -34,11 +34,11 @@ EXPORT void drv_motor_set(UINT motor, INT duty)
 	if (motor > 1U) {
 		return;
 	}
-	d = APP_CLAMP(duty, -MOTOR_DUTY_MAX, MOTOR_DUTY_MAX);
+	d = app_clamp(duty, -MOTOR_DUTY_MAX, MOTOR_DUTY_MAX);
 	if (motor_invert[motor]) {
 		d = -d;
 	}
-	cc = ((UW)APP_ABS(d) * (MOTOR_PWM_WRAP + 1U)) / (UW)MOTOR_DUTY_MAX;
+	cc = ((UW)app_abs(d) * (MOTOR_PWM_WRAP + 1U)) / (UW)MOTOR_DUTY_MAX;
 
 	if (d > 0) {			/* forward: A = PWM, B = 0 */
 		pwm_set_cc(motor_pin_b[motor], 0);

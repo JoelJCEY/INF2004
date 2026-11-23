@@ -37,7 +37,8 @@ LOCAL INT put_uint(UB *p, UW v)
 
 EXPORT INT app_log(const UB *format, ...)
 {
-	UB	text[APP_LOG_LEN];	/* the only big buffer: tasks have 2 KB */
+	/* the only big buffer: tasks have 2 KB */
+	UB	text[APP_LOG_LEN];
 	UB	pre[12];
 	va_list	ap;
 	INT	n;
@@ -53,7 +54,8 @@ EXPORT INT app_log(const UB *format, ...)
 	n = tm_vsnprintf(text, (INT)sizeof(text), format, ap);
 	va_end(ap);
 
-	/* Dashboard copy: "uptime_ms text", without leading/trailing newlines */
+	/* Dashboard copy: "uptime_ms text", without leading/trailing
+	   newlines */
 	s = 0;
 	while ((s < n) && ((text[s] == '\n') || (text[s] == '\r'))) {
 		s++;
@@ -66,8 +68,10 @@ EXPORT INT app_log(const UB *format, ...)
 		(void)tm_putstring(text);	/* blank line: console only */
 		return n;
 	}
-	noise = (((e - s) >= 3) && (text[s] == 'i') && (text[s + 1] == 'r') && (text[s + 2] == ':')) ||
-		(((e - s) >= 4) && (text[s] == 'e') && (text[s + 1] == 'n') && (text[s + 2] == 'c') && (text[s + 3] == ':'));
+	noise = (((e - s) >= 3) && (text[s] == 'i') && (text[s + 1] == 'r') &&
+		(text[s + 2] == ':')) ||
+		(((e - s) >= 4) && (text[s] == 'e') && (text[s + 1] == 'n') &&
+			(text[s + 2] == 'c') && (text[s + 3] == ':'));
 	if (noise && (app_log_quiet != 0U)) {
 		return n;
 	}
@@ -78,7 +82,8 @@ EXPORT INT app_log(const UB *format, ...)
 	DI(imask);
 	if (noise && (count >= APP_LOG_NOISE_MAX)) {
 		EI(imask);
-		return n;	/* sensor chatter: console only while backed up */
+		/* sensor chatter: console only while backed up */
+		return n;
 	}
 	slot = head;
 	for (i = 0; i < k; i++) {

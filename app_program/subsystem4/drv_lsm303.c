@@ -33,11 +33,13 @@ EXPORT ER drv_lsm303_init(void)
 
 	er = drv_i2c0_write_reg(LSM303_ACC_ADDR, CTRL_REG1_A, REG1_100HZ_XYZ);
 	if (er == E_OK) {
-		er = drv_i2c0_write_reg(LSM303_ACC_ADDR, CTRL_REG4_A, REG4_8G_HR);
+		er = drv_i2c0_write_reg(LSM303_ACC_ADDR, CTRL_REG4_A,
+			REG4_8G_HR);
 	}
 	if (er == E_OK) {
 		/* The DLHC accelerometer has no WHO_AM_I: read back instead */
-		er = drv_i2c0_read_regs(LSM303_ACC_ADDR, CTRL_REG4_A, &check, 1U);
+		er = drv_i2c0_read_regs(LSM303_ACC_ADDR, CTRL_REG4_A, &check,
+			1U);
 		if ((er == E_OK) && (check != REG4_8G_HR)) {
 			er = E_IO;
 		}
@@ -51,9 +53,27 @@ EXPORT ER drv_lsm303_init(void)
 	if (er == E_OK) {
 		(void)drv_i2c0_write_reg(LSM303_MAG_ADDR, CRA_REG_M, CRA_30HZ);
 		(void)drv_i2c0_write_reg(LSM303_MAG_ADDR, CRB_REG_M, CRB_1G3);
-		er = drv_i2c0_write_reg(LSM303_MAG_ADDR, MR_REG_M, MR_CONTINUOUS);
+		er = drv_i2c0_write_reg(LSM303_MAG_ADDR, MR_REG_M,
+			MR_CONTINUOUS);
 	}
 	return er;
+}
+
+/* A 16-bit two's complement register pair as a signed value, without
+   relying on an out-of-range cast (Barr-C) */
+LOCAL W lsm303_s16(UW raw)
+{
+	return (raw >= 0x8000U) ? ((W)raw - 0x10000) : (W)raw;
+}
+
+/* Accelerometer register pair -> mg.  The 12-bit value is left-
+   justified, so its low 4 bits are always 0 and dividing by 16 is exact;
+   app_asr keeps the old ">> 4" result without shifting a signed value. */
+LOCAL W lsm303_acc_mg(UB lo, UB hi)
+{
+	UW	raw = (UW)lo | ((UW)hi << 8);
+
+	return app_asr(lsm303_s16(raw), 4U) * LSM303_MG_PER_LSB;
 }
 
 EXPORT ER drv_lsm303_read_acc(LSM303_ACC *a)
@@ -66,9 +86,9 @@ EXPORT ER drv_lsm303_read_acc(LSM303_ACC *a)
 		return er;
 	}
 	/* 12-bit, left-justified, little-endian */
-	a->x = ((W)(H)((UH)b[0] | ((UH)b[1] << 8)) >> 4) * LSM303_MG_PER_LSB;
-	a->y = ((W)(H)((UH)b[2] | ((UH)b[3] << 8)) >> 4) * LSM303_MG_PER_LSB;
-	a->z = ((W)(H)((UH)b[4] | ((UH)b[5] << 8)) >> 4) * LSM303_MG_PER_LSB;
+	a->x = lsm303_acc_mg(b[0], b[1]);
+	a->y = lsm303_acc_mg(b[2], b[3]);
+	a->z = lsm303_acc_mg(b[4], b[5]);
 	return E_OK;
 }
 
@@ -82,8 +102,8 @@ EXPORT ER drv_lsm303_read_mag(LSM303_MAG *m)
 		return er;
 	}
 	/* Big-endian, order X, Z, Y */
-	m->x = (H)(((UH)b[0] << 8) | b[1]);
-	m->z = (H)(((UH)b[2] << 8) | b[3]);
-	m->y = (H)(((UH)b[4] << 8) | b[5]);
+	m->x = (H)lsm303_s16(((UW)b[0] << 8) | (UW)b[1]);
+	m->z = (H)lsm303_s16(((UW)b[2] << 8) | (UW)b[3]);
+	m->y = (H)lsm303_s16(((UW)b[4] << 8) | (UW)b[5]);
 	return E_OK;
 }

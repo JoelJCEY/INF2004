@@ -27,11 +27,13 @@
    files that the template only links into WIFI=cyw43 builds (the default).
    Team build: make SMP=0 NET=lwip MQTT=1 -j8  (design 1.0: SMP=0). */
 #if !TM_WIFI_CYW43
-#error "IS11 firmware needs WIFI=cyw43 (the default): the PIO and DMA drivers come from the Pico SDK"
+#error "IS11 firmware needs WIFI=cyw43 (the default): the PIO and DMA " \
+       "drivers come from the Pico SDK"
 #endif
 
 /* ---------------------------------------------------------------------
- *  Compile-time check (Barr-C: static asserts on every packed struct)
+ *  Compile-time check (Barr-C: static asserts on every packed struct).
+ *  A macro: it declares a type, which no function can do.
  * --------------------------------------------------------------------- */
 #define APP_STATIC_ASSERT(cond, name)	\
 	typedef char app_static_assert_##name[(cond) ? 1 : -1]
@@ -121,11 +123,14 @@ typedef enum {
  *    bits 24-31  letter for TURN RIGHT
  *  0 in a byte = no letter set for that movement.
  * --------------------------------------------------------------------- */
-#define APP_BARCODE_MAP(fwd, uturn, left, right)			\
-	((UW)(UB)(fwd) | ((UW)(UB)(uturn) << 8) |			\
-	 ((UW)(UB)(left) << 16) | ((UW)(UB)(right) << 24))
+Inline UW app_barcode_map_pack(UB fwd, UB uturn, UB left, UB right)
+{
+	return (UW)fwd | ((UW)uturn << 8) | ((UW)left << 16) |
+	       ((UW)right << 24);
+}
 /* Map at power-on, before MQTT delivers one.  0 = none (the demo rule).
-   For a test without Wi-Fi only, e.g. APP_BARCODE_MAP('F','U','A','Z'). */
+   For a test without Wi-Fi only, e.g.
+   app_barcode_map_pack('F', 'U', 'A', 'Z'). */
 #define APP_BARCODE_MAP_DEFAULT	0UL
 
 IMPORT volatile UW app_barcode_map;
@@ -137,7 +142,8 @@ IMPORT volatile UW app_barcode_map;
    retained: a reboot always comes back in normal mode.
    ONE writer: comms_bridge_on_command() (subsystem 1). */
 IMPORT volatile UW app_barcode_test;
-IMPORT volatile UW app_song_req;	/* 16 Nov: dashboard song, seq<<8 | id */
+/* 16 Nov: dashboard song, seq<<8 | id */
+IMPORT volatile UW app_song_req;
 
 /* Movement for a letter under a map; BC_UNRECOGNISED if not in it */
 Inline BARCODE_CMD app_barcode_lookup(UW map, UB letter)
@@ -202,16 +208,25 @@ typedef enum {
  *    bits 16-23 state bits with a single named writer
  *  Data never travels in the flag: it travels in the message buffers.
  * --------------------------------------------------------------------- */
-#define EVF_NAV			(1U << 8)	/* line_task  -> Navigation Command Queue  */
-#define EVF_TERRAIN		(1U << 9)	/* imu_task   -> Terrain Status Queue      */
-#define EVF_OBSTACLE		(1U << 10)	/* scan_task  -> Obstacle Profile Queue    */
-#define EVF_MOTION		(1U << 11)	/* motion_task-> Motion Status Queue       */
-#define EVF_REMOTE		(1U << 12)	/* comms      -> Remote Command Queue      */
-#define EVF_CTRL_WAKE		(0x0000FFFFU)	/* everything ctrl_task waits for          */
+/* line_task  -> Navigation Command Queue */
+#define EVF_NAV			(1U << 8)
+/* imu_task   -> Terrain Status Queue */
+#define EVF_TERRAIN		(1U << 9)
+/* scan_task  -> Obstacle Profile Queue */
+#define EVF_OBSTACLE		(1U << 10)
+/* motion_task-> Motion Status Queue */
+#define EVF_MOTION		(1U << 11)
+/* comms      -> Remote Command Queue */
+#define EVF_REMOTE		(1U << 12)
+/* everything ctrl_task waits for */
+#define EVF_CTRL_WAKE		(0x0000FFFFU)
 
-#define EVF_HUMP_ACTIVE		(1U << 16)	/* writer: imu_task only (set/clear)       */
-#define EVF_IMU_READY		(1U << 17)	/* writer: imu_task (baseline done)        */
-#define EVF_LINE_READY		(1U << 18)	/* writer: line_task (ADC/DMA running)     */
+/* writer: imu_task only (set/clear) */
+#define EVF_HUMP_ACTIVE		(1U << 16)
+/* writer: imu_task (baseline done) */
+#define EVF_IMU_READY		(1U << 17)
+/* writer: line_task (ADC/DMA running) */
+#define EVF_LINE_READY		(1U << 18)
 
 /* ---------------------------------------------------------------------
  *  Every subsystem provides these.  usermain() calls ALL the _init()
@@ -247,17 +262,33 @@ IMPORT void subsystem4_test(void);
 IMPORT void subsystem5_test(void);
 #endif
 
-/* Print a readable message if a kernel call failed (negative error code) */
-#define CHECK(er, what)							\
-	do {								\
-		INT check_er_ = (INT)(er);	/* evaluate once */	\
-		if (check_er_ < E_OK) {					\
-			tm_printf((UB*)"ERROR %s: %d\n", (what), check_er_); \
-		}							\
-	} while (0)
+/* Small helpers used by several subsystems.  Barr-C: functions, not
+   parameterised macros, so each argument is evaluated exactly once.
+   Every caller passes W, INT or H values (checked at the 22 Nov
+   clean-up), which all fit a W without change. */
+Inline W app_abs(W v)
+{
+	return (v < 0) ? -v : v;
+}
 
-/* Clamp helper used by several subsystems */
-#define APP_CLAMP(v, lo, hi)	(((v) < (lo)) ? (lo) : (((v) > (hi)) ? (hi) : (v)))
-#define APP_ABS(v)		(((v) < 0) ? -(v) : (v))
+Inline W app_clamp(W v, W lo, W hi)
+{
+	return (v < lo) ? lo : ((v > hi) ? hi : v);
+}
+
+/* Arithmetic shift right: floor(v / 2^n), the result GCC gives for
+   v >> n on a signed v.  Barr-C forbids shifting signed values, so the
+   shift is done on the unsigned magnitude.  n must be 1..31. */
+Inline W app_asr(W v, UINT n)
+{
+	W	r;
+
+	if (v >= 0) {
+		r = (W)((UW)v >> n);
+	} else {
+		r = -(W)(((0U - (UW)v) + ((1UL << n) - 1UL)) >> n);
+	}
+	return r;
+}
 
 #endif /* APP_H */

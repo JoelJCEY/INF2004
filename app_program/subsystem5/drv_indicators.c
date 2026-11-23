@@ -9,11 +9,14 @@
 #define BUZZER_SLICE		3U
 #define BUZZER_DIV_INT		64U			/* 125 MHz / 64 */
 #define BUZZER_CLK_HZ		(125000000UL / BUZZER_DIV_INT)
-#define PWM_DIV_REG(s)		(PWM_BASE + ((s) * 0x14UL) + PWM_CHx_DIV)
 
 /* Plain-C entry points of the PIO side (drv_neopixel_pio.c) */
 IMPORT int  neopixel_pio_init(unsigned int pin);
 IMPORT void neopixel_pio_put(unsigned int grb, unsigned int count);
+
+/* PWM divider register of this slice */
+#define BUZZER_DIV_REG		(PWM_BASE + (BUZZER_SLICE * 0x14UL) \
+	+ PWM_CHx_DIV)
 
 EXPORT void drv_buttons_init(void)
 {
@@ -32,7 +35,7 @@ EXPORT void drv_buzzer_init(void)
 {
 	app_unreset(RESETS_RESET_PWM);
 	pwm_set_pin(BUZZER_PIN);
-	out_w(PWM_DIV_REG(BUZZER_SLICE), BUZZER_DIV_INT << 4);
+	out_w(BUZZER_DIV_REG, BUZZER_DIV_INT << 4);
 	pwm_set_cc(BUZZER_PIN, 0);
 	pwm_set_wrap(BUZZER_PIN, 1000U);
 	pwm_set_enabled(BUZZER_PIN, TRUE);

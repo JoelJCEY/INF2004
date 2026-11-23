@@ -68,7 +68,8 @@ EXPORT ER subsystem5_init(void)
 
 EXPORT ER subsystem5_start(void)
 {
-	tid_ctrl = app_start_task_stk(ctrl_task, S5_PRI_CTRL, 0, CTRL_STACK_SIZE,
+	tid_ctrl = app_start_task_stk(ctrl_task, S5_PRI_CTRL, 0,
+		CTRL_STACK_SIZE,
 				      "ctrl_task");
 	if (tid_ctrl < E_OK) {
 		return tid_ctrl;

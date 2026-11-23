@@ -33,6 +33,18 @@ gcc $CF -ffunction-sections -fdata-sections -Wl,--gc-sections -o simctrl simctrl
   $A/subsystem5/ctrl_logic.c $A/subsystem2/motion_api.c
 ./simctrl
 rm -f simctrl
+# Task-level traces (22 Nov): run the real imu_task / scan_task against
+# scripted sensors and print every output.  Save the output before a
+# change and diff it after: identical output = same behaviour.
+gcc $CF -w -o simimu simimu.c $A/subsystem4/task_imu.c $A/subsystem4/hump.c \
+  $A/subsystem4/lift.c -lm
+./simimu flat > simimu_flat.txt && ./simimu move > simimu_move.txt
+echo "imu_task trace: $(wc -l < simimu_flat.txt) + $(wc -l < simimu_move.txt) lines"
+gcc $CF -w -o simscan simscan.c $A/subsystem5/task_scan.c \
+  $A/subsystem5/scan_profile.c -lm
+./simscan > simscan.txt
+echo "scan_task trace: $(wc -l < simscan.txt) lines"
+rm -f simimu simscan
 python3 ../is11_mqtt.py selftest
 rm -f hosttest simmotion
 # Sensor bench (app_program/sensor_bench.c) against a scripted user:
