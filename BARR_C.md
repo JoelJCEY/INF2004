@@ -1,8 +1,7 @@
 # Barr-C 2018 compliance — IS11 firmware (`app_program/`)
 
 Clean-up of 22 Nov on top of the 18 Nov firmware.  **The car's logic is
-unchanged** apart from the bypass guard fix (see *Found while checking*
-1): every other change below is either layout only (same machine code)
+unchanged**: every change below is either layout only (same machine code)
 or a restructuring that was checked to give exactly the same outputs (see
 *Verification*).
 
@@ -97,24 +96,19 @@ is checked too.
   * `simimu` (new, the real `imu_task`): level learning, a hump, a lift,
     a tilt and an I2C failure, with noisy (negative) readings;
   * `simscan` (new, the real `scan_task`): watch, hump pause, alert,
-    sweep, profile, pass watch, rescan, guard and bench pings (one
-    difference: the guard fix, see below).
+    sweep, profile, pass watch, rescan, guard and bench pings.
 * **`app_asr`** compared with `>>` for 6.2 million values: no
   difference.  **LSM303 conversion** compared for all 65 536 register
   values: no difference.
 
 ## Found while checking
 
-1. **Bypass guard fixed (22 Nov, the one deliberate behaviour change).**
-   In `scan_task`'s bypass state, `confirm` was reset to 0 at the start of
-   every pass through the loop, so the guard's "2 readings in a row under
-   120 mm" (`++confirm >= 2`) could never be reached and
-   `OB_CLEARANCE_LOST` was never sent.  The count is now reset only after
-   a sweep and during the pass watch, so two consecutive close readings
-   on a forward bypass leg send `OB_CLEARANCE_LOST`; `ctrl_task` then
-   counts a failed attempt (reverse 100 mm and rescan; the second
-   failure is FAULT STOP), as FR7 describes.  `simscan` shows the one
-   difference: the guard now reports the 90 mm object.
+1. **Bypass guard (not changed on this branch).**  In `scan_task`'s
+   bypass state, `confirm` is reset to 0 at the start of every pass
+   through the loop, so the guard's "2 readings in a row under 120 mm"
+   (`++confirm >= 2`) can never be reached and `OB_CLEARANCE_LOST` is
+   never sent.  This branch keeps the 18 Nov behaviour exactly; the fix
+   is on the `barr-c-compliant+bypass` branch.
 2. **`simline right` updated.**  The scenario was written before the
    16 Nov C+R early hold and expected a right correction straight away.
    Since 16 Nov the error is held at 0 for 45 mm when C and R are both

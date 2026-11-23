@@ -477,6 +477,7 @@ LOCAL void scan_guard_step(SCAN_CTX *c)
 LOCAL void scan_bypass_step(SCAN_CTX *c)
 {
 	c->alerted = FALSE;
+	c->confirm = 0;
 	glance_clear();
 	if (!c->swept || (scan_rescan_request != c->last_req)) {
 		/* first sweep after an alert decides if it is real; a rescan
@@ -485,13 +486,7 @@ LOCAL void scan_bypass_step(SCAN_CTX *c)
 		c->last_req = scan_rescan_request;
 		c->swept = TRUE;
 		c->guard_sent = FALSE;
-		/* 22 Nov: the guard count starts here and is NOT reset on
-		   every pass of the loop any more (before, "2 readings in a
-		   row under GUARD_MIN_MM" could never be reached, so
-		   OB_CLEARANCE_LOST was never sent) */
-		c->confirm = 0;
 	} else if (scan_pass_watch != 0U) {
-		c->confirm = 0;	/* guard readings must be consecutive */
 		scan_pass_watch_step(c);
 	} else {
 		pw_on = FALSE;	/* no pass watch: the next one starts fresh */
